@@ -1,0 +1,21 @@
+# Entorno de Python
+.venv/
+__pycache__/
+*.pyc
+
+# Configuración local de cada máquina
+config_local.py
+
+# Datos: NO van al repositorio
+datos/
+*.obj
+*.ply
+*.stl
+*.blend
+*.blend1
+*.sofa
+*.inp
+
+# Sistema
+.DS_Store
+Thumbs.db
