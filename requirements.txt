@@ -4,3 +4,5 @@ trimesh
 scipy
 numpy
 nicegui
+pymeshlab
+pyvista

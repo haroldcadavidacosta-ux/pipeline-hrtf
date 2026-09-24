@@ -1,0 +1,510 @@
+"""Limpieza automática de escaneos de cabeza (KIRI Engine). Solo geometría, sin interfaz.
+
+Se ejecuta desde limpiar_malla.py (raíz del repo). Decisiones de diseño: malla/LIMPIEZA.md
+
+Pasos:
+  1. Carga la malla y la lleva al sistema anatómico usando la matriz del JSON de
+     landmarks (+x adelante, +y izquierda, +z arriba, origen interaural).
+  2. Quita las piezas flotantes: se queda SOLO con la componente conexa más grande.
+  3. Quita la "cresta": la parte superior de la cabeza que el escáner no vio y que
+     la reconstrucción rellenó con una especie de carpa. Se ajusta un elipsoide
+     al cráneo (banda lateral, que sí está bien escaneada) y en el casquete
+     superior se eliminan los vértices que no coinciden con él.
+  4. Reparación topológica básica.
+  5. Reconstrucción Screened Poisson: puntos originales + puntos del elipsoide
+     donde quedó el hueco + tapa plana en el cuello  ->  malla cerrada.
+  6. Alisado del casco (pelo, pozos, pliegues) sin tocar las orejas -> 3_suavizada.ply
+     (--suavizar 0 lo desactiva).
+  7. Control de calidad: topología + proporciones del cráneo (+ escala, si la hay). Si
+     falla -> pedir nuevo escaneo. Avisa (sin bloquear) si una concha salió poco profunda.
+  8. Escala real (opcional): con el AID o la circunferencia medidos en la persona se
+     escala a milímetros -> malla_final_mm.ply.
+
+Todas las distancias se expresan como fracción del AID (distancia interaural),
+así no dependen de la escala arbitraria del escaneo.
+"""
+import json
+import shutil
+import tempfile
+import uuid
+from pathlib import Path
+
+import numpy as np
+import pymeshlab
+from scipy.optimize import least_squares
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
+from scipy.spatial import cKDTree
+
+import config
+from malla.oreja import metricas as metricas_oreja
+
+# --- Parámetros (en unidades de AID) -----------------------------------------
+BANDA_AJUSTE = (0.25, 0.85)     # alturas usadas para ajustar el elipsoide del cráneo
+CARA_X, CARA_Z = 0.45, 0.60     # se excluye la cara (x > CARA_X y z < CARA_Z) del ajuste
+INICIO_CASQUETE = 0.70          # el casquete empieza en z = cz + 0.70 * radio vertical
+# |distancia al elipsoide| aceptada en el casquete. Se prueba en orden: si Poisson sale
+# con túneles (genus > 0) se reintenta con la siguiente, más estricta.
+TOLERANCIAS = (0.06, 0.045, 0.035, 0.025)   # 0.06 AID ~ 9 mm
+COS_NORMAL = 0.5                # la normal debe apuntar hacia afuera del elipsoide (cos > 0.5)
+ANILLOS_EXTRA = 4               # anillos de vecinos que se quitan alrededor de lo detectado
+MARGEN_CUELLO = 0.02            # el corte del cuello queda justo por encima del borde abierto
+PROFUNDIDAD_POISSON = 10
+SIGMA_RELLENO = 0.08            # ancho del promedio gaussiano que pega el relleno a los datos
+SIGMA_CASCO = 0.08              # ancho del alisado del casco (~12 mm); 0 = no alisar
+CASCO_DESDE, CASCO_HASTA = -0.10, 0.05   # rampa del alisado, en AID respecto al centro del cráneo
+PASOS_TAUBIN = 20               # relajación final tras el alisado
+NUCA_X, NUCA_Z = 0.15, -0.45    # el alisado también cubre x < -0.15 AID (detrás de las orejas) y z > -0.45 AID
+PROFUNDIDAD_CONCHA_MIN = 0.02   # AID (~3 mm): por debajo se avisa de concha mal capturada
+CIRCUNFERENCIA_Z = (0.35, 0.80) # AID: alturas donde se busca el perímetro máximo (sobre las orejas)
+DISCREPANCIA_ESCALA_MAX = 0.02  # si hay dos medidas, sus factores de escala deben coincidir al 2 %
+# Rangos anatómicos plausibles (en AID) para el control de calidad
+LARGO_CRANEO = (0.55, 0.95)     # semieje adelante-atrás
+ANCHO_CRANEO = (0.50, 0.75)     # semieje lateral (= vertical)
+TOPE_CRANEO = (0.85, 1.30)      # altura del tope sobre el eje interaural
+RADIO_OREJA = 0.30              # radio (en AID) alrededor de cada canal auditivo que NO se alisa
+
+
+# --- Utilidades ---------------------------------------------------------------
+# PyMeshLab no puede escribir (y a veces leer) rutas con tildes en Windows ("Prueba á"),
+# así que la E/S pasa por un archivo temporal con nombre ASCII.
+def cargar(ms: pymeshlab.MeshSet, ruta: Path):
+    ruta = Path(ruta)
+    if str(ruta.resolve()).isascii():
+        ms.load_new_mesh(str(ruta))
+        return
+    tmp = Path(tempfile.gettempdir()) / f"limpieza_{uuid.uuid4().hex}{ruta.suffix}"
+    shutil.copy(ruta, tmp)
+    try:
+        ms.load_new_mesh(str(tmp))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def guardar(ms: pymeshlab.MeshSet, ruta: Path):
+    tmp = Path(tempfile.gettempdir()) / f"limpieza_{uuid.uuid4().hex}{Path(ruta).suffix}"
+    ms.save_current_mesh(str(tmp), save_vertex_color=False)
+    shutil.move(tmp, ruta)
+
+
+def a_malla(ms: pymeshlab.MeshSet, V, F):
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V, face_matrix=F))
+
+
+def quitar_vertices(V, F, conservar):
+    """Deja solo los vértices marcados (y las caras que los usan todos)."""
+    F = F[conservar[F].all(axis=1)]
+    nuevo = -np.ones(len(V), dtype=np.int64)
+    usados = np.unique(F)
+    nuevo[usados] = np.arange(len(usados))
+    return V[usados], nuevo[F]
+
+
+def componente_mayor(V, F):
+    n = len(V)
+    A = coo_matrix((np.ones(3 * len(F)),
+                    (np.r_[F[:, 0], F[:, 1], F[:, 2]], np.r_[F[:, 1], F[:, 2], F[:, 0]])),
+                   shape=(n, n))
+    _, lab = connected_components(A, directed=False)
+    cuenta = np.bincount(lab[F[:, 0]], minlength=lab.max() + 1)
+    return quitar_vertices(V, F, lab == np.argmax(cuenta)), len(cuenta)
+
+
+def vertices_borde(F):
+    E = np.sort(np.r_[F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]], axis=1)
+    u, c = np.unique(E, axis=0, return_counts=True)
+    return np.unique(u[c == 1])
+
+
+def segmentos_corte(V, F, z0):
+    """Segmentos (x0, y0, x1, y1) de la intersección de la malla con el plano z = z0."""
+    s = V[F, 2] - z0                                    # (caras, 3)
+    cruza = (s.min(1) < 0) & (s.max(1) > 0)
+    segs = []
+    for Fi, si in zip(F[cruza], s[cruza]):
+        pts = [V[Fi[i]] + (V[Fi[j]] - V[Fi[i]]) * si[i] / (si[i] - si[j])
+               for i, j in ((0, 1), (1, 2), (2, 0)) if si[i] * si[j] < 0]
+        if len(pts) == 2:
+            segs.append(np.r_[pts[0][:2], pts[1][:2]])
+    return np.array(segs).reshape(-1, 4)
+
+
+def circunferencia(V, F, aid):
+    """Perímetro horizontal máximo de la cabeza por encima de las orejas (≈ cinta métrica)."""
+    mejor = (0.0, 0.0)
+    for z in np.linspace(*CIRCUNFERENCIA_Z, 46) * aid:
+        S = segmentos_corte(V, F, z)
+        perimetro = float(np.linalg.norm(S[:, 2:] - S[:, :2], axis=1).sum())
+        mejor = max(mejor, (perimetro, float(z)))
+    return mejor                                         # (perímetro, altura), unidades del modelo
+
+
+def tapa_plana(V, F, z0, paso):
+    """Rejilla de puntos en el plano z = z0, solo DENTRO de la sección real de la malla.
+
+    La sección no es convexa (cuello + hombros), así que se usa la regla par-impar
+    contra los segmentos triángulo ∩ plano en vez del casco convexo.
+    """
+    S = segmentos_corte(V, F, z0)
+    x0, y0, x1, y1 = S.T
+    xs = np.arange(min(x0.min(), x1.min()), max(x0.max(), x1.max()), paso)
+    ys = np.arange(min(y0.min(), y1.min()), max(y0.max(), y1.max()), paso)
+    g = np.stack(np.meshgrid(xs, ys), -1).reshape(-1, 2)
+    dentro = np.zeros(len(g), dtype=bool)
+    for k in range(0, len(g), 2000):                    # rayo hacia +x, contar cruces
+        px, py = g[k:k + 2000, :1], g[k:k + 2000, 1:]
+        entre = (y0 > py) != (y1 > py)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xc = x0 + (py - y0) * (x1 - x0) / (y1 - y0)
+        dentro[k:k + 2000] = (entre & (xc > px)).sum(1) % 2 == 1
+    g = g[dentro]
+    # no pegar puntos al contorno: evita capas dobles con las paredes del cuello
+    borde = np.r_[S[:, :2], S[:, 2:]]
+    g = g[cKDTree(borde).query(g)[0] > 1.5 * paso]
+    return np.c_[g, np.full(len(g), z0)]
+
+
+def desfase_suave(elip, datos, P, sigma):
+    """Distancia datos-elipsoide interpolada en P con núcleo gaussiano (tiende a 0 lejos)."""
+    d, _ = elip.distancia(datos)
+    arbol = cKDTree(datos)
+    out = np.zeros(len(P))
+    for i, vec in enumerate(arbol.query_ball_point(P, 3 * sigma)):
+        if vec:
+            w = np.exp(-np.sum((datos[vec] - P[i]) ** 2, axis=1) / (2 * sigma ** 2))
+            out[i] = np.sum(w * d[vec]) / (w.sum() + 1.0)   # +1: peso del "elipsoide puro"
+    return out
+
+
+def suavizar_casco(ms, elip, aid, sigma):
+    """Alisa pelo, pozos y pliegues de la parte alta de la cabeza sin encogerla.
+
+    La superficie se trata como un "relieve" sobre el elipsoide del cráneo: se mide la
+    distancia de cada vértice al elipsoide, esa distancia se difunde sobre la malla
+    (≈ promedio gaussiano de ancho sigma) y el vértice se mueve sobre la normal del
+    elipsoide hasta la distancia alisada. El efecto entra gradualmente desde las cejas
+    hacia arriba (y en la nuca, detrás de las orejas) y se apaga alrededor de las orejas.
+    """
+    m = ms.current_mesh()
+    V, F = m.vertex_matrix().copy(), m.face_matrix()
+    d, n = elip.distancia(V)
+    cz = elip.centro[2]
+
+    def rampa(t):
+        t = np.clip(t, 0, 1)
+        return t * t * (3 - 2 * t)
+    w = rampa((V[:, 2] - (cz + CASCO_DESDE * aid)) / ((CASCO_HASTA - CASCO_DESDE) * aid))
+    # nuca: detrás del plano de las orejas y hasta el cuello alto (pliegues/nudos del gorro)
+    nuca = rampa((-V[:, 0] / aid - NUCA_X) / 0.15) * rampa((V[:, 2] / aid - NUCA_Z) / 0.15)
+    w = np.maximum(w, nuca)
+    for lado in (1, -1):                               # canales auditivos en (0, ±AID/2, 0)
+        r = np.linalg.norm(V - [0, lado * aid / 2, 0], axis=1) / (RADIO_OREJA * aid)
+        w *= rampa((r - 1) / 0.5)                      # 0 dentro del radio, 1 a 1.5 radios
+
+    # difusión en la zona afectada (y un margen), con paseo aleatorio perezoso
+    zona = V[:, 2] > min(cz + CASCO_DESDE * aid, NUCA_Z * aid) - 2 * sigma * aid
+    idx = np.flatnonzero(zona)
+    loc = -np.ones(len(V), dtype=np.int64)
+    loc[idx] = np.arange(len(idx))
+    E = np.r_[F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]]
+    E = loc[E[zona[E].all(axis=1)]]
+    A = coo_matrix((np.ones(2 * len(E)), (np.r_[E[:, 0], E[:, 1]], np.r_[E[:, 1], E[:, 0]])),
+                   shape=(len(idx),) * 2).tocsr()
+    A.data[:] = 1.0
+    grado = np.asarray(A.sum(axis=1)).ravel()
+    arista = np.median(np.linalg.norm(V[F[:, 0]] - V[F[:, 1]], axis=1))
+    pasos = int(4 * (sigma * aid / arista) ** 2)      # varianza del paseo ≈ pasos·arista²/4
+    ds = d[idx].copy()
+    for _ in range(pasos):
+        ds = 0.5 * ds + 0.5 * (A @ ds) / grado
+    mover = np.zeros(len(V))
+    mover[idx] = (ds - d[idx]) * w[idx]
+    V += mover[:, None] * n
+
+    ms.clear()
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V, face_matrix=F, v_scalar_array=w))
+    # relaja pliegues finos sin encoger, solo donde hubo alisado (las orejas quedan intactas)
+    ms.compute_selection_by_condition_per_vertex(condselect="q > 0")
+    ms.compute_selection_transfer_vertex_to_face(inclusive=False)
+    ms.apply_coord_taubin_smoothing(stepsmoothnum=PASOS_TAUBIN, selected=True)
+    ms.set_selection_none()
+    ms.compute_normal_per_vertex()
+    return {"sigma_AID": sigma, "pasos_difusion": pasos,
+            "desplazamiento_max_AID": round(float(np.abs(mover).max() / aid), 4)}
+
+
+def topologia(ms):
+    t = ms.get_topological_measures()
+    return {k: t[k] for k in ("vertices_number", "faces_number", "connected_components_number",
+                              "boundary_edges", "non_two_manifold_edges",
+                              "non_two_manifold_vertices", "is_mesh_two_manifold", "genus")} | {
+        "caras_autointersecadas": autointersecciones(ms)}
+
+
+def reparar_autointersecciones(ms, intentos=5):
+    """Borra las caras que se cruzan (con un margen), cierra el agujero y alisa el parche.
+
+    Devuelve cuántas rondas hicieron falta (0 = no había nada que reparar).
+    """
+    for i in range(intentos):
+        ms.compute_selection_by_self_intersections_per_face()
+        if ms.current_mesh().selected_face_number() == 0:
+            return i
+        for _ in range(2 + 2 * i):                    # cada ronda abarca un poco más
+            ms.apply_selection_dilatation()
+        ms.meshing_remove_selected_faces()
+        ms.meshing_remove_unreferenced_vertices()
+        ms.meshing_remove_connected_component_by_diameter(
+            mincomponentdiag=pymeshlab.PercentageValue(10))
+        ms.meshing_close_holes(maxholesize=2000, newfaceselected=True, selfintersection=False)
+        ms.meshing_surface_subdivision_midpoint(iterations=2, selected=True,
+                                                threshold=pymeshlab.PercentageValue(0.3))
+        ms.apply_selection_dilatation()
+        ms.apply_coord_laplacian_smoothing(stepsmoothnum=10, selected=True)
+        ms.set_selection_none()
+    ms.compute_normal_per_vertex()
+    return intentos
+
+
+def autointersecciones(ms):
+    ms.compute_selection_by_self_intersections_per_face()
+    n = ms.current_mesh().selected_face_number()
+    ms.set_selection_none()
+    return n
+
+
+# --- Elipsoide del cráneo: ejes alineados, radio vertical = radio lateral -----
+class Elipsoide:
+    def __init__(self, P):
+        def resid(q):
+            cx, cy, cz, a, b = q
+            return np.sqrt(((P[:, 0] - cx) / a) ** 2 + ((P[:, 1] - cy) / b) ** 2
+                           + ((P[:, 2] - cz) / b) ** 2) - 1
+        c0 = P.mean(0)
+        q = least_squares(resid, [*c0, 0.3, 0.3], loss="soft_l1", f_scale=0.02).x
+        self.centro, self.radios = q[:3], np.array([q[3], q[4], q[4]])
+
+    def distancia(self, P):
+        """Distancia aproximada con signo (+ afuera) y normal unitaria hacia afuera."""
+        u = (P - self.centro) / self.radios
+        f = np.sum(u ** 2, axis=1) - 1
+        grad = 2 * u / self.radios
+        ng = np.linalg.norm(grad, axis=1)
+        return f / ng, grad / ng[:, None]
+
+    def muestrear(self, paso):
+        a, b, c = self.radios
+        n_th = int(np.pi * max(a, c) / paso)
+        pts = []
+        for th in np.linspace(0, np.pi, n_th):
+            r_eq = max(a, b) * np.sin(th)
+            n_ph = max(1, int(2 * np.pi * r_eq / paso))
+            ph = np.linspace(0, 2 * np.pi, n_ph, endpoint=False)
+            pts.append(np.c_[a * np.sin(th) * np.cos(ph), b * np.sin(th) * np.sin(ph),
+                             np.full(n_ph, c * np.cos(th))])
+        P = np.vstack(pts) + self.centro
+        _, N = self.distancia(P)
+        return P, N
+
+
+# --- Pipeline -----------------------------------------------------------------
+def limpiar(ruta_malla: Path, ruta_json: Path, salida: Path, tolerancia: float = TOLERANCIAS[0],
+            sigma_casco: float = SIGMA_CASCO):
+    salida.mkdir(parents=True, exist_ok=True)
+    datos = json.loads(ruta_json.read_text(encoding="utf-8"))
+    T, aid = np.array(datos["matriz"]), float(datos["aid"])
+    informe = {"entrada": str(ruta_malla), "aid": aid, "tolerancia_casquete": tolerancia}
+
+    ms = pymeshlab.MeshSet()
+    cargar(ms, ruta_malla)
+    ms.meshing_remove_duplicate_vertices()      # el OBJ texturizado duplica vértices en las costuras
+    ms.meshing_remove_unreferenced_vertices()
+    m = ms.current_mesh()
+    V = m.vertex_matrix() @ T[:3, :3].T + T[:3, 3]
+    F = m.face_matrix()
+    informe["original"] = {"vertices": len(V), "caras": len(F)}
+
+    # 2. Piezas flotantes
+    (V, F), n_comp = componente_mayor(V, F)
+    informe["componentes_eliminadas"] = n_comp - 1
+
+    # 3. Cresta
+    z = V[:, 2] / aid
+    banda = (z > BANDA_AJUSTE[0]) & (z < BANDA_AJUSTE[1]) & ~((V[:, 0] / aid > CARA_X) & (z < CARA_Z))
+    elip = Elipsoide(V[banda])
+    z_casquete = elip.centro[2] + INICIO_CASQUETE * elip.radios[2]
+
+    ms.clear()
+    a_malla(ms, V, F)
+    ms.compute_normal_per_vertex()
+    N = ms.current_mesh().vertex_normal_matrix()
+    d, n_elip = elip.distancia(V)
+    cos = np.sum(N * n_elip, axis=1)
+    en_casquete = V[:, 2] > z_casquete
+    coincide = (np.abs(d) < tolerancia * aid) & (cos > COS_NORMAL)
+    # por encima del centro del cráneo: pliegues (normal hacia adentro) y salientes (ala de pelo)
+    pliegue = (V[:, 2] > elip.centro[2]) & ((cos < 0) | (d > tolerancia * aid))
+    cresta = (en_casquete & ~coincide) | pliegue
+    for _ in range(ANILLOS_EXTRA):                 # crecer la selección para no dejar alas sueltas
+        cresta[F[cresta[F].any(axis=1)]] = True
+    V, F = quitar_vertices(V, F, ~cresta)
+    (V, F), _ = componente_mayor(V, F)          # restos de la carpa que quedaron sueltos
+    informe["elipsoide"] = {"centro": elip.centro.round(4).tolist(), "radios": elip.radios.round(4).tolist(),
+                            "tope_z_en_AID": round(float((elip.centro[2] + elip.radios[2]) / aid), 3),
+                            "inicio_casquete_z": round(float(z_casquete), 4)}
+    informe["vertices_cresta_eliminados"] = int(cresta.sum())
+
+    # 4. Reparación
+    ms.clear()
+    a_malla(ms, V, F)
+    ms.meshing_remove_duplicate_faces()
+    ms.meshing_remove_null_faces()
+    ms.meshing_repair_non_manifold_edges(method="Remove Faces")
+    ms.meshing_repair_non_manifold_vertices()
+    ms.meshing_remove_connected_component_by_face_number(mincomponentsize=50)
+    ms.meshing_remove_unreferenced_vertices()
+    ms.compute_normal_per_vertex()
+    guardar(ms, salida / "1_limpia_abierta.ply")
+    informe["limpia_abierta"] = topologia(ms)
+
+    # 5. Nube de puntos para Poisson
+    m = ms.current_mesh()
+    V, F, N = m.vertex_matrix(), m.face_matrix(), m.vertex_normal_matrix()
+    paso = np.median(np.linalg.norm(V[F[:, 0]] - V[F[:, 1]], axis=1))
+
+    # tapa del cuello: se recorta plano justo por encima del borde abierto y se tapa
+    zb = V[vertices_borde(F), 2]
+    z_cuello = zb[zb < 0].max() + MARGEN_CUELLO * aid   # z < 0: debajo de las orejas (el hueco de arriba no cuenta)
+    arriba = V[:, 2] > z_cuello
+    Vp, Np = V[arriba], N[arriba]
+    tapa = tapa_plana(V, F, z_cuello, paso)
+
+    # hueco superior: puntos del elipsoide en el casquete, solo donde no hay datos reales.
+    # (La banda de pliegues quitados, más abajo, NO se rellena con el elipsoide: en la nuca
+    # los datos se separan de él y Poisson crearía túneles. Esa zona se alisa en el paso 6.)
+    Pe, Ne = elip.muestrear(paso)
+    lejos = cKDTree(Vp).query(Pe)[0] > 4 * paso
+    sel = (Pe[:, 2] > z_casquete) & lejos
+    Pe, Ne = Pe[sel], Ne[sel]
+    # el relleno se desplaza sobre su normal según cuánto se separan del elipsoide los datos
+    # cercanos (promedio gaussiano, continuo); lejos de los datos tiende al elipsoide puro.
+    # Así el parche arranca donde termina la superficie real, sin escalones.
+    Pe = Pe + desfase_suave(elip, Vp[Vp[:, 2] > elip.centro[2] - 0.1 * aid], Pe, SIGMA_RELLENO * aid)[:, None] * Ne
+    informe["puntos_relleno"] = {"elipsoide": len(Pe), "tapa_cuello": len(tapa)}
+
+    P = np.vstack([Vp, Pe, tapa])
+    Nn = np.vstack([Np, Ne, np.tile([0, 0, -1.0], (len(tapa), 1))])
+    ms.clear()
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=P, v_normals_matrix=Nn))
+    ms.generate_surface_reconstruction_screened_poisson(depth=PROFUNDIDAD_POISSON, preclean=True)
+    ms.meshing_remove_connected_component_by_diameter(
+        mincomponentdiag=pymeshlab.PercentageValue(10))
+    ms.meshing_remove_duplicate_vertices()
+    ms.meshing_remove_duplicate_faces()
+    ms.meshing_remove_null_faces()
+    ms.meshing_repair_non_manifold_edges(method="Remove Faces")
+    ms.meshing_repair_non_manifold_vertices()
+    ms.meshing_remove_unreferenced_vertices()
+    ms.meshing_close_holes(maxholesize=100)
+    informe["reparacion_autointersecciones"] = {"poisson": reparar_autointersecciones(ms)}
+
+    guardar(ms, salida / "2_cerrada_poisson.ply")
+    informe["cerrada_poisson"] = topologia(ms)
+
+    # 6. Alisado del casco (pelo, pozos, pliegues), protegiendo los pabellones
+    if sigma_casco:
+        informe["suavizada"] = suavizar_casco(ms, elip, aid, sigma_casco)
+        informe["reparacion_autointersecciones"]["suavizada"] = reparar_autointersecciones(ms)
+        guardar(ms, salida / "3_suavizada.ply")
+        informe["suavizada"] |= topologia(ms)
+
+    # 7a. Calidad de las orejas (profundidad de concha, facetado) sobre la malla final
+    m = ms.current_mesh()
+    informe["oreja"] = metricas_oreja(m.vertex_matrix(), m.face_matrix(), aid)
+
+    (salida / "informe_limpieza.json").write_text(json.dumps(informe, indent=2, default=int), encoding="utf-8")
+    return informe
+
+
+def control_calidad(informe):
+    """Compuerta final: la malla solo sigue al pipeline si pasa todos los chequeos."""
+    fallas = []
+    final = informe.get("suavizada") or informe["cerrada_poisson"]
+    if final["connected_components_number"] != 1:
+        fallas.append(f"{final['connected_components_number']} piezas (debe ser 1)")
+    if final["boundary_edges"] or not final["is_mesh_two_manifold"]:
+        fallas.append("malla abierta o no-manifold")
+    if final["genus"] != 0:
+        fallas.append(f"genus {final['genus']}: túneles; suele indicar huecos o capas dobles en el escaneo")
+    if final["caras_autointersecadas"]:
+        fallas.append(f"{final['caras_autointersecadas']} caras autointersecadas")
+    radios = np.array(informe["elipsoide"]["radios"]) / informe["aid"]
+    for nombre, r, (lo, hi) in (("largo", radios[0], LARGO_CRANEO), ("ancho", radios[1], ANCHO_CRANEO)):
+        if not lo <= r <= hi:
+            fallas.append(f"semieje {nombre} del cráneo {r:.2f} AID fuera de [{lo}, {hi}]: revisar landmarks")
+    tope = informe["elipsoide"]["tope_z_en_AID"]
+    if not TOPE_CRANEO[0] <= tope <= TOPE_CRANEO[1]:
+        fallas.append(f"tope del cráneo a {tope} AID fuera de {list(TOPE_CRANEO)}: revisar landmarks")
+    esc = informe.get("escala")
+    if esc and esc["factor"]:
+        lo, hi = config.AID_MIN_MM, config.AID_MAX_MM
+        if not lo <= esc["aid_mm"] <= hi:
+            fallas.append(f"AID escalado de {esc['aid_mm']:.1f} mm fuera de [{lo}, {hi}]: revisar la medida")
+        if esc.get("discrepancia") is not None and esc["discrepancia"] > DISCREPANCIA_ESCALA_MAX:
+            fallas.append(f"el AID y la circunferencia dan escalas que difieren un "
+                          f"{100 * esc['discrepancia']:.1f} %: revisar medidas o landmarks")
+    # Avisos (no bloquean): la concha casi siempre sale poco profunda con fotogrametría de
+    # celular, así que rechazar por esto dejaría fuera casi todos los escaneos.
+    avisos = [f"oreja {lado}: concha de {o['profundidad_concha_AID']} AID (< {PROFUNDIDAD_CONCHA_MIN}); "
+              "probablemente rellena por el escaneo, o landmark del canal mal ubicado"
+              for lado, o in informe.get("oreja", {}).items()
+              if o["profundidad_concha_AID"] < PROFUNDIDAD_CONCHA_MIN]
+    if not (esc and esc["factor"]):
+        avisos.append("sin escala real: la malla sigue en las unidades arbitrarias de KIRI "
+                      "(dar --aid-mm o --circunferencia-mm)")
+    return {"aprobado": not fallas, "fallas": fallas, "avisos": avisos}
+
+
+def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None):
+    """Factor de escala a milímetros a partir de medidas reales de la persona.
+
+    Con el AID el factor es directo (los landmarks ya lo miden en la malla). Con la
+    circunferencia se compara contra el perímetro horizontal máximo sobre las orejas.
+    Si se dan las dos se usa el AID y la otra sirve de control.
+    """
+    final = salida / ("3_suavizada.ply" if "suavizada" in informe else "2_cerrada_poisson.ply")
+    ms = pymeshlab.MeshSet()
+    cargar(ms, final)
+    m = ms.current_mesh()
+    V, F, aid = m.vertex_matrix(), m.face_matrix(), informe["aid"]
+    perimetro, z = circunferencia(V, F, aid)
+    esc = {"circunferencia_modelo": round(perimetro, 5), "altura_circunferencia_AID": round(z / aid, 3),
+           "factor": None}
+    f_aid = aid_mm / aid if aid_mm else None
+    f_circ = circunferencia_mm / perimetro if circunferencia_mm else None
+    if f_aid and f_circ:
+        esc["discrepancia"] = round(abs(f_aid - f_circ) / f_aid, 4)
+    factor = f_aid or f_circ
+    if factor:
+        esc |= {"factor": factor, "fuente": "aid" if f_aid else "circunferencia",
+                "aid_mm": round(aid * factor, 2), "circunferencia_mm": round(perimetro * factor, 1)}
+        ms.clear()
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V * factor, face_matrix=F))
+        guardar(ms, salida / "malla_final_mm.ply")
+    return esc
+
+
+def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: float = SIGMA_CASCO,
+                 aid_mm: float | None = None, circunferencia_mm: float | None = None):
+    """Repite la limpieza con tolerancias cada vez más estrictas hasta obtener genus 0,
+    escala a mm si hay medidas, y aplica el control de calidad (queda en informe_limpieza.json)."""
+    for tol in TOLERANCIAS:
+        informe = limpiar(ruta_malla, ruta_json, salida, tol, sigma_casco)
+        t = informe["cerrada_poisson"]
+        print(f"tolerancia {tol}: genus {t['genus']}, bordes {t['boundary_edges']}")
+        if t["genus"] == 0 and t["boundary_edges"] == 0 and t["is_mesh_two_manifold"]:
+            break
+    informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm)
+    informe["control_calidad"] = control_calidad(informe)
+    (salida / "informe_limpieza.json").write_text(json.dumps(informe, indent=2, default=int), encoding="utf-8")
+    return informe
