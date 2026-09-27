@@ -3,7 +3,7 @@ requirements.txt se importan correctamente."""
 import importlib
 import sys
 
-PAQUETES = ["streamlit", "plotly", "trimesh", "scipy", "numpy"]
+PAQUETES = ["streamlit", "plotly", "trimesh", "scipy", "numpy", "nicegui", "pymeshlab", "pyvista"]
 
 print(f"Python {sys.version.split()[0]}")
 print(f"sys.executable: {sys.executable}")
