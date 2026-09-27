@@ -34,7 +34,7 @@ import pymeshlab
 from scipy.optimize import least_squares
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
-from scipy.spatial import cKDTree
+from scipy.spatial import Delaunay, cKDTree
 
 import config
 from malla.oreja import largos as largos_oreja
@@ -586,6 +586,10 @@ def control_calidad(informe):
     if not (esc and esc["factor"]):
         avisos.append("sin escala real: la malla sigue en las unidades arbitrarias de KIRI "
                       "(dar el largo de las orejas y/o la circunferencia)")
+    corte = informe.get("corte_cuello")
+    if corte and not corte["aplicado"]:
+        avisos.append(f"corte del cuello no aplicado ({corte['motivo']}); malla_final_mm.ply "
+                      "queda sin cortar")
     return {"aprobado": not fallas, "fallas": fallas, "avisos": avisos}
 
 
@@ -646,6 +650,187 @@ def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None, orejas_m
     return esc
 
 
+# --- Corte del cuello (sobre la malla ya en mm) --------------------------------
+def cortar_por_plano(V, F, z0):
+    """Se queda con la parte de la malla por encima de z = z0, partiendo exactamente las
+    caras que cruzan el plano. Cada punto de corte se crea una sola vez por arista, así
+    las dos caras que la comparten usan el mismo vértice y el borde queda sin grietas."""
+    s = V[:, 2] - z0
+    arriba = s > 0
+    n_arriba = arriba[F].sum(axis=1)
+    nuevos, indice, caras = [], {}, []
+
+    def punto(i, j):
+        clave = (min(i, j), max(i, j))
+        if clave not in indice:
+            indice[clave] = len(V) + len(nuevos)
+            p = V[i] + s[i] / (s[i] - s[j]) * (V[j] - V[i])
+            p[2] = z0                                          # exacto sobre el plano
+            nuevos.append(p)
+        return indice[clave]
+
+    for f in F[(n_arriba == 1) | (n_arriba == 2)]:
+        a = arriba[f]
+        k = int(np.flatnonzero(a if a.sum() == 1 else ~a)[0])   # el vértice solitario primero
+        p, q, r = f[k], f[(k + 1) % 3], f[(k + 2) % 3]           # (conserva la orientación)
+        if a.sum() == 1:                                           # p arriba; q y r abajo
+            caras.append([p, punto(p, q), punto(r, p)])
+        else:                                                      # p abajo; q y r arriba
+            pq, rp = punto(p, q), punto(r, p)
+            caras += [[pq, q, r], [pq, r, rp]]
+    V2 = np.vstack([V, np.reshape(nuevos, (-1, 3))])
+    F2 = np.vstack([F[n_arriba == 3], np.reshape(caras, (-1, 3)).astype(F.dtype)])
+    return quitar_vertices(V2, F2, np.ones(len(V2), dtype=bool))
+
+
+def lazos_de_borde(F):
+    """Lazos del borde como listas ordenadas de vértices (siguiendo las medias aristas).
+    None si el borde no son lazos simples (algún vértice con más o menos de una arista
+    de borde entrando y saliendo)."""
+    H = np.r_[F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]]
+    todas = set(map(tuple, H.tolist()))
+    borde = [(a, b) for a, b in H.tolist() if (b, a) not in todas]
+    siguiente = dict(borde)
+    if len(siguiente) != len(borde) or set(siguiente.values()) != set(siguiente):
+        return None
+    lazos, vistos = [], set()
+    for inicio in siguiente:
+        lazo, v = [], inicio
+        while v not in vistos:
+            vistos.add(v)
+            lazo.append(v)
+            v = siguiente[v]
+        if lazo:
+            lazos.append(lazo)
+    return lazos
+
+
+def dentro_poligono(Q, P):
+    """Regla par-impar: qué puntos Q (n, 2) caen dentro del polígono P (m, 2)."""
+    x0, y0 = P[:, 0], P[:, 1]
+    x1, y1 = np.roll(x0, -1), np.roll(y0, -1)
+    dentro = np.zeros(len(Q), dtype=bool)
+    for k in range(0, len(Q), 2000):
+        px, py = Q[k:k + 2000, :1], Q[k:k + 2000, 1:]
+        entre = (y0 > py) != (y1 > py)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xc = x0 + (py - y0) * (x1 - x0) / (y1 - y0)
+        dentro[k:k + 2000] = (entre & (xc > px)).sum(1) % 2 == 1
+    return dentro
+
+
+def tapar_lazo(V, lazo, paso):
+    """Tapa plana y bien formada para un lazo de borde plano: rejilla interior (sin
+    pegarse al borde) + Delaunay, quedándose con los triángulos de dentro, mirando hacia
+    abajo (hacia fuera de la cabeza). Devuelve (puntos nuevos, triángulos) con índices
+    sobre [V, puntos nuevos]."""
+    P = V[lazo, :2]
+    lo, hi = P.min(0), P.max(0)
+    g = np.stack(np.meshgrid(np.arange(lo[0] + paso / 2, hi[0], paso),
+                             np.arange(lo[1] + paso / 2, hi[1], paso)), -1).reshape(-1, 2)
+    g = g[dentro_poligono(g, P)]
+    g = g[cKDTree(P).query(g)[0] > 0.75 * paso]
+    todos = np.vstack([P, g])
+    T = Delaunay(todos).simplices
+    T = T[dentro_poligono(todos[T].mean(axis=1), P)]
+    n = ((todos[T[:, 1], 0] - todos[T[:, 0], 0]) * (todos[T[:, 2], 1] - todos[T[:, 0], 1])
+         - (todos[T[:, 1], 1] - todos[T[:, 0], 1]) * (todos[T[:, 2], 0] - todos[T[:, 0], 0]))
+    T[n > 0] = T[n > 0][:, ::-1]                                  # normal hacia -z
+    mapa = np.r_[np.asarray(lazo), len(V) + np.arange(len(g))]
+    z0 = V[lazo[0], 2]
+    return np.c_[g, np.full(len(g), z0)], mapa[T]
+
+
+def comprobar_cerrada(V, F):
+    """Problemas de una malla que debe ser cerrada, orientable y de genus 0 (lista vacía = bien)."""
+    problemas = []
+    H = np.r_[F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]].astype(np.int64)
+    n = len(V)
+    clave = H[:, 0] * n + H[:, 1]
+    if len(np.unique(clave)) != len(clave):
+        problemas.append("medias aristas repetidas (orientación incoherente o no-manifold)")
+    if not np.isin(H[:, 1] * n + H[:, 0], clave).all():
+        problemas.append("aristas de borde (malla abierta)")
+    g = genus_region(F, np.ones(len(F), dtype=bool))
+    if g != 0:
+        problemas.append(f"genus {g}")
+    volumen = np.einsum("ij,ij->i", V[F[:, 0]], np.cross(V[F[:, 1]], V[F[:, 2]])).sum() / 6
+    if volumen <= 0:
+        problemas.append("normales hacia dentro")
+    return problemas
+
+
+def cortar_cuello(ruta: Path, z_mm: float):
+    """Corta la malla en mm con el plano z = z_mm (respecto del eje interaural) y la tapa.
+    Solo se sobrescribe el archivo si el resultado queda cerrado y sano; si no, se deja
+    como estaba y el motivo queda en el informe (y como aviso en el control de calidad)."""
+    ms = pymeshlab.MeshSet()
+    cargar(ms, ruta)
+    V, F = ms.current_mesh().vertex_matrix(), ms.current_mesh().face_matrix()
+    info = {"z_mm": z_mm, "aplicado": False}
+    if V[:, 2].min() >= z_mm:
+        return info | {"motivo": f"la malla ya termina por encima de z = {z_mm} mm"}
+    arista = float(np.median(np.linalg.norm(V[F[:, 0]] - V[F[:, 1]], axis=1)))
+    z = z_mm
+    while np.any(V[:, 2] == z):                  # ningún vértice justo sobre el plano
+        z = np.nextafter(z, np.inf)
+    V2, F2 = cortar_por_plano(V, F, z)
+    # si el plano pasa casi rozando un vértice, el corte deja puntos casi coincidentes en
+    # el borde (Delaunay los perdería): se fusionan y se quitan las caras degeneradas.
+    # Solo los puntos del plano: fusionar en toda la malla abre agujeros donde el escaneo
+    # trae vértices muy juntos (pasó en la punta de la nariz)
+    en_plano = np.flatnonzero(V2[:, 2] == z)
+    rep = np.arange(len(V2))
+
+    def raiz(i):
+        while rep[i] != i:
+            i = rep[i]
+        return i
+
+    for i, j in cKDTree(V2[en_plano]).query_pairs(0.02 * arista):
+        a, b = raiz(en_plano[i]), raiz(en_plano[j])
+        rep[max(a, b)] = min(a, b)
+    rep = np.array([raiz(i) for i in range(len(V2))])
+    F2 = rep[F2]
+    F2 = F2[(F2[:, 0] != F2[:, 1]) & (F2[:, 1] != F2[:, 2]) & (F2[:, 2] != F2[:, 0])]
+    F2 = F2[np.sort(np.unique(np.sort(F2, axis=1), axis=0, return_index=True)[1])]
+    V2, F2 = quitar_vertices(V2, F2, np.ones(len(V2), dtype=bool))
+    # el plano puede dejar sueltos trozos de hombro que suben por encima del corte; la
+    # herramienta de gradado se cae con piezas extra, así que solo queda la cabeza
+    (V2, F2), piezas = componente_mayor(V2, F2)
+    lazos = lazos_de_borde(F2)
+    if lazos is None:
+        return info | {"motivo": "el borde del corte no quedó como lazos simples"}
+    nuevos, tapa = [], []
+    for lazo in lazos:
+        P, T = tapar_lazo(V2, lazo, 3 * arista)
+        tapa.append(T + np.where(T >= len(V2), sum(len(p) for p in nuevos), 0))
+        nuevos.append(P)
+    V3 = np.vstack([V2, *nuevos])
+    tapa = np.vstack(tapa)
+    F3 = np.vstack([F2, tapa])
+    # comprobaciones: cerrada y sana, y la tapa cubre exactamente la sección (sin solapes)
+    problemas = comprobar_cerrada(V3, F3)
+    d = V3[tapa]
+    area_tapa = 0.5 * np.abs((d[:, 1, 0] - d[:, 0, 0]) * (d[:, 2, 1] - d[:, 0, 1])
+                             - (d[:, 1, 1] - d[:, 0, 1]) * (d[:, 2, 0] - d[:, 0, 0])).sum()
+    area_seccion = sum(0.5 * abs(np.sum(V2[l, 0] * np.roll(V2[l, 1], -1) - np.roll(V2[l, 0], -1) * V2[l, 1]))
+                       for l in map(np.asarray, lazos))
+    if abs(area_tapa - area_seccion) > 1e-6 * area_seccion:
+        problemas.append(f"la tapa ({area_tapa:.1f} mm²) no coincide con la sección ({area_seccion:.1f} mm²)")
+    if len(componente_mayor(V3, F3)[0][1]) != len(F3):
+        problemas.append("más de una pieza")
+    info |= {"z_mm": round(z, 4), "lazos": len(lazos), "piezas_sueltas_quitadas": piezas - 1,
+             "caras_antes": len(F), "caras_despues": len(F3),
+             "area_seccion_mm2": round(float(area_seccion), 1)}
+    if problemas:
+        return info | {"motivo": "; ".join(problemas)}
+    ms.clear()
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V3, face_matrix=F3))
+    guardar(ms, ruta)
+    return info | {"aplicado": True}
+
+
 def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: float = SIGMA_CASCO,
                  aid_mm: float | None = None, circunferencia_mm: float | None = None,
                  orejas_mm: tuple[float | None, float | None] = (None, None)):
@@ -666,6 +851,9 @@ def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: f
     if largos:
         informe["largo_oreja_modelo"] = {lado: round(d, 6) for lado, d in largos.items()}
     informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm, orejas_mm)
+    # el corte del cuello va en mm (config.CORTE_CUELLO_MM), así que solo hay corte si hay escala
+    if informe["escala"]["factor"]:
+        informe["corte_cuello"] = cortar_cuello(salida / "malla_final_mm.ply", config.CORTE_CUELLO_MM)
     informe["control_calidad"] = control_calidad(informe)
     (salida / "informe_limpieza.json").write_text(json.dumps(informe, indent=2, default=int), encoding="utf-8")
     return informe

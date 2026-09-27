@@ -208,7 +208,7 @@ En `datos\salidas\<nombre de la carpeta del escaneo>\`:
 | `1_limpia_abierta.ply` | sin piezas sueltas ni cresta, todavía abierta |
 | `2_cerrada_poisson.ply` | cerrada |
 | `3_suavizada.ply` | cerrada y alisada: la que sigue en el pipeline (unidades de KIRI) |
-| `malla_final_mm.ply` | la misma, en milímetros (solo si se dieron medidas) |
+| `malla_final_mm.ply` | la misma, en milímetros y cortada en el cuello a `CORTE_CUELLO_MM` (solo si se dieron medidas) |
 | `informe_limpieza.json` | todas las métricas, la escala y el veredicto |
 
 Cada limpieza **sobrescribe** la anterior de esa carpeta.

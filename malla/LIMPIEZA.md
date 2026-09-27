@@ -26,7 +26,7 @@ Salida en `datos/salidas/<carpeta de la malla>/`:
 | `1_limpia_abierta.ply` | sin piezas flotantes ni cresta; abierta arriba y en el cuello |
 | `2_cerrada_poisson.ply` | cerrada (Poisson), sin alisar |
 | `3_suavizada.ply` | cerrada y con el casco alisado — **la que sigue en el pipeline** |
-| `malla_final_mm.ply` | `3_suavizada` escalada a milímetros (solo si se dio una medida) |
+| `malla_final_mm.ply` | `3_suavizada` escalada a milímetros y cortada en el cuello (solo si se dio una medida) |
 | `informe_limpieza.json` | métricas de cada paso + `control_calidad` (`aprobado`, `fallas`, `avisos`) |
 
 Código de salida 0 = aprobada, 1 = hay que repetir el escaneo.
@@ -99,6 +99,34 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      es control al 2 %), pero mide entre ENTRADAS de canal, no trago a trago.
    - Después de escalar, el control de calidad exige el AID dentro de
      `config.AID_MIN_MM`–`AID_MAX_MM`: atrapa errores gruesos de cualquier medida.
+8. **Corte del cuello** (`cortar_cuello`): sobre `malla_final_mm.ply`, plano horizontal
+   en `config.CORTE_CUELLO_MM` (mm respecto del eje de los canales; −150 por defecto) y
+   tapa plana. Va en mm, así que solo se hace si hay escala. Quita superficie que el
+   gradado igual llenaría de elementos: en B, 67 296 → 63 256 caras graduadas a
+   −150 mm y 56 200 a −100 mm (`-x 0.5 -y 10`).
+   - **Corte exacto** (`cortar_por_plano`): las caras que cruzan el plano se parten justo
+     en él; el punto de corte se crea una vez por arista, así el borde queda sin grietas.
+     Los puntos casi coincidentes que deja un plano que roza un vértice se fusionan,
+     **solo los que están sobre el plano**: con `meshing_merge_close_vertices` de MeshLab
+     sobre toda la malla, en E1 se fusionaron dos vértices muy juntos de la
+     punta de la nariz y abrió un agujero allí.
+   - **Solo queda la pieza mayor**: el plano puede dejar sueltos trozos de hombro que
+     suben por encima del corte (E1 a −150 mm: una isla de 17 × 12 mm), y
+     **el programa de gradado se cae** (segfault) con piezas extra. Se cuentan en
+     `piezas_sueltas_quitadas`.
+   - **Tapa** (`tapar_lazo`): rejilla interior (3 aristas de paso, sin pegarse al borde)
+     + Delaunay, quedándose con los triángulos de dentro, mirando hacia abajo.
+   - **Probado y descartado**: `meshing_close_holes` de MeshLab para la tapa deja ~80 %
+     de los triángulos volteados (tapa plegada sobre sí misma; el detector de
+     autointersecciones no lo ve porque son coplanares). Recorte de orejas (*ear
+     clipping*): tapa válida pero con triángulos larguísimos, y **el programa de gradado
+     se cuelga** con ellos. Remallar la tapa con MeshLab: deja 2–3 triángulos volteados.
+     Desplazar el plano hasta que no roce ningún vértice: imposible con ~600 000
+     vértices (lo corría 2.4 mm).
+   - **Solo se guarda si el resultado es sano**: una pieza, cerrada, orientación coherente, genus 0,
+     normales hacia fuera y área de la tapa = área de la sección (sin solapes ni
+     huecos). Si no, `malla_final_mm.ply` queda sin cortar y sale un aviso. Queda en
+     `informe["corte_cuello"]`.
 
 ## Circunferencia: qué mide la malla y cómo medir con cinta
 
