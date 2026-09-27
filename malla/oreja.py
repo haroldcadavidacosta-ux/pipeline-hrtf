@@ -10,6 +10,21 @@ from scipy.spatial import ConvexHull
 
 RADIO_PABELLON = 0.25   # AID
 
+# Puntos del JSON de landmarks que definen el largo de cada oreja (hélix -> lóbulo),
+# la misma medida que se toma con una regla en la persona para la escala.
+PUNTOS_LARGO = {"izq": ("helix_izquierdo", "lobulo_izquierdo"),
+                "der": ("helix_derecho", "lobulo_derecho")}
+
+
+def largos(puntos):
+    """Largo de cada oreja (unidades del modelo) a partir de los puntos del JSON de
+    landmarks; solo las orejas que tienen marcados sus dos puntos."""
+    out = {}
+    for lado, (arriba, abajo) in PUNTOS_LARGO.items():
+        if arriba in puntos and abajo in puntos:
+            out[lado] = float(np.linalg.norm(np.subtract(puntos[arriba]["xyz"], puntos[abajo]["xyz"])))
+    return out
+
 
 def metricas(V, F, aid):
     out = {}

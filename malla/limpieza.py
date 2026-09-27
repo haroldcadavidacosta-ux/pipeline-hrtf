@@ -37,6 +37,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 import config
+from malla.oreja import largos as largos_oreja
 from malla.oreja import metricas as metricas_oreja
 
 # --- Parámetros (en unidades de AID) -----------------------------------------
@@ -58,11 +59,18 @@ NUCA_X, NUCA_Z = 0.15, -0.45    # el alisado también cubre x < -0.15 AID (detr�
 PROFUNDIDAD_CONCHA_MIN = 0.02   # AID (~3 mm): por debajo se avisa de concha mal capturada
 CIRCUNFERENCIA_Z = (0.35, 0.80) # AID: alturas donde se busca el perímetro máximo (sobre las orejas)
 DISCREPANCIA_ESCALA_MAX = 0.02  # si hay dos medidas, sus factores de escala deben coincidir al 2 %
+# Discrepancia máxima entre los factores de orejas y circunferencia. Sin fijar (None =
+# solo se informa): falta validar con medidas reales de personas (ver LIMPIEZA.md).
+DISCREPANCIA_OREJAS_MAX = None
 # Rangos anatómicos plausibles (en AID) para el control de calidad
 LARGO_CRANEO = (0.55, 0.95)     # semieje adelante-atrás
 ANCHO_CRANEO = (0.50, 0.75)     # semieje lateral (= vertical)
 TOPE_CRANEO = (0.85, 1.30)      # altura del tope sobre el eje interaural
 RADIO_OREJA = 0.30              # radio (en AID) alrededor de cada canal auditivo que NO se alisa
+# Túneles que deja Poisson (genus > 0): se localizan con barridos y se reparan en local
+TUNEL_MAX = 0.10                # AID (~15 mm): un túnel más grande es un defecto del escaneo, no se toca
+MARGEN_TUNEL = 0.01             # AID (~1.5 mm) alrededor de la caja del túnel que también se rehace
+PASO_BARRIDO = 0.005            # AID: precisión con que se ubica la caja del túnel
 
 
 # --- Utilidades ---------------------------------------------------------------
@@ -266,6 +274,108 @@ def reparar_autointersecciones(ms, intentos=5):
     return intentos
 
 
+def genus_region(F, sel):
+    """Genus del trozo de malla formado por las caras `sel`.
+
+    Con la característica de Euler de una superficie con bordes:
+    χ = V − E + F = 2·piezas − 2·genus − bordes. Un túnel solo cuenta si el trozo lo
+    contiene entero; si el borde del trozo lo corta, el asa queda partida y no cuenta.
+    """
+    F = F[sel]
+    if not len(F):
+        return 0
+    _, Fl = np.unique(F, return_inverse=True)
+    Fl = Fl.reshape(F.shape)
+    nv = int(Fl.max()) + 1
+    E = np.sort(np.r_[Fl[:, [0, 1]], Fl[:, [1, 2]], Fl[:, [2, 0]]], axis=1)
+    clave, cuenta = np.unique(E[:, 0] * nv + E[:, 1], return_counts=True)
+    chi = nv - len(clave) + len(F)
+    a, b = clave // nv, clave % nv
+    piezas = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(nv, nv)), directed=False)[0]
+    ab, bb = a[cuenta == 1], b[cuenta == 1]               # aristas de borde
+    bordes = 0
+    if len(ab):
+        n_borde = len(np.unique(np.r_[ab, bb]))
+        bordes = connected_components(coo_matrix((np.ones(len(ab)), (ab, bb)), shape=(nv, nv)),
+                                      directed=False)[0] - (nv - n_borde)
+    return (2 * piezas - bordes - chi) // 2
+
+
+def localizar_tunel(C, F, paso):
+    """Caja (lo, hi) que encierra entero al menos un túnel, en las unidades de C (centros
+    de cara). Barre un plano por cada lado de cada eje: el genus del trozo salta justo
+    donde el plano deja de cortar el túnel. Cada barrido restringe la región del siguiente."""
+    sel = np.ones(len(F), dtype=bool)
+    lo, hi = C.min(0) - paso, C.max(0) + paso
+    for i in (2, 0, 1):
+        # borde inferior: el mayor t que deja un túnel entero en C_i > t (búsqueda binaria)
+        a, b = lo[i], hi[i]
+        while b - a > paso:
+            t = (a + b) / 2
+            a, b = (t, b) if genus_region(F, sel & (C[:, i] > t)) >= 1 else (a, t)
+        lo[i] = a
+        sel &= C[:, i] > a
+        a, b = lo[i], hi[i]                  # borde superior: el menor t con túnel en C_i < t
+        while b - a > paso:
+            t = (a + b) / 2
+            a, b = (a, t) if genus_region(F, sel & (C[:, i] < t)) >= 1 else (t, b)
+        hi[i] = b
+        sel &= C[:, i] < b
+    return lo, hi
+
+
+def reparar_tuneles(ms, aid, intentos_por_tunel=2):
+    """Quita los túneles (asas) que deja Poisson: localiza cada uno, borra las caras de su
+    caja (más un margen), cierra los agujeros y alisa solo el parche. Si un túnel es
+    grande (> TUNEL_MAX) o cae cerca de una oreja (RADIO_OREJA), no se toca y la malla
+    seguirá rechazada por el control de calidad. Ver LIMPIEZA.md."""
+    genus = ms.get_topological_measures()["genus"]
+    informe = {"encontrados": int(genus), "reparados": [], "sin_reparar": None}
+    while genus > 0:
+        m = ms.current_mesh()
+        V, F = m.vertex_matrix().copy(), m.face_matrix().copy()
+        C = V[F].mean(axis=1) / aid
+        lo, hi = localizar_tunel(C, F, PASO_BARRIDO)
+        caja = {"desde_AID": lo.round(3).tolist(), "hasta_AID": hi.round(3).tolist()}
+        if (hi - lo).max() > TUNEL_MAX:
+            informe["sin_reparar"] = caja | {"motivo": f"túnel de más de {TUNEL_MAX} AID"}
+            break
+        cerca = [lado for lado in (1, -1)
+                 if np.linalg.norm(np.clip([0, lado / 2, 0], lo, hi) - [0, lado / 2, 0]) < RADIO_OREJA]
+        if cerca:
+            informe["sin_reparar"] = caja | {"motivo": "túnel en la zona de una oreja"}
+            break
+        for intento in range(intentos_por_tunel):
+            margen = MARGEN_TUNEL * (1 + intento)          # si no alcanza, un parche más grande
+            dentro = ((C > lo - margen) & (C < hi + margen)).all(axis=1)
+            ms.clear()
+            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V, face_matrix=F[~dentro]))
+            ms.meshing_remove_unreferenced_vertices()
+            ms.meshing_remove_connected_component_by_diameter(
+                mincomponentdiag=pymeshlab.PercentageValue(10))
+            ms.meshing_repair_non_manifold_edges(method="Remove Faces")
+            ms.meshing_repair_non_manifold_vertices()
+            ms.meshing_close_holes(maxholesize=2000, newfaceselected=True, selfintersection=False)
+            ms.meshing_surface_subdivision_midpoint(iterations=2, selected=True,
+                                                    threshold=pymeshlab.PercentageValue(0.3))
+            ms.apply_selection_dilatation()
+            ms.apply_coord_laplacian_smoothing(stepsmoothnum=10, selected=True)
+            ms.set_selection_none()
+            t = ms.get_topological_measures()
+            if t["genus"] < genus and t["boundary_edges"] == 0 and t["connected_components_number"] == 1:
+                informe["reparados"].append(caja | {"caras_borradas": int(dentro.sum()),
+                                                    "margen_AID": margen})
+                genus = t["genus"]
+                break
+        else:                                              # ningún intento redujo el genus
+            ms.clear()
+            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V, face_matrix=F))
+            informe["sin_reparar"] = caja | {"motivo": "el parche no quitó el túnel"}
+            break
+    ms.compute_normal_per_vertex()
+    return informe
+
+
 def autointersecciones(ms):
     ms.compute_selection_by_self_intersections_per_face()
     n = ms.current_mesh().selected_face_number()
@@ -407,6 +517,15 @@ def limpiar(ruta_malla: Path, ruta_json: Path, salida: Path, tolerancia: float =
     ms.meshing_remove_unreferenced_vertices()
     ms.meshing_close_holes(maxholesize=100)
     informe["reparacion_autointersecciones"] = {"poisson": reparar_autointersecciones(ms)}
+    # túneles (genus > 0): solo se toca la malla si los hay, así que las que ya salían
+    # con genus 0 quedan idénticas y su informe no cambia. El genus se cuenta en numpy:
+    # get_topological_measures() de PyMeshLab altera su estado interno y el alisado
+    # posterior salía distinto (hasta 0.2 mm) aunque no hubiera túneles.
+    F_poisson = ms.current_mesh().face_matrix()
+    if genus_region(F_poisson, np.ones(len(F_poisson), dtype=bool)) > 0:
+        informe["tuneles"] = reparar_tuneles(ms, aid)
+        if informe["tuneles"]["reparados"]:              # el parche alisado puede cruzarse
+            informe["reparacion_autointersecciones"]["tuneles"] = reparar_autointersecciones(ms)
 
     guardar(ms, salida / "2_cerrada_poisson.ply")
     informe["cerrada_poisson"] = topologia(ms)
@@ -453,6 +572,11 @@ def control_calidad(informe):
         if esc.get("discrepancia") is not None and esc["discrepancia"] > DISCREPANCIA_ESCALA_MAX:
             fallas.append(f"el AID y la circunferencia dan escalas que difieren un "
                           f"{100 * esc['discrepancia']:.1f} %: revisar medidas o landmarks")
+        if DISCREPANCIA_OREJAS_MAX is not None:
+            for fuente, dif in esc.get("discrepancias", {}).items():
+                if dif > DISCREPANCIA_OREJAS_MAX:
+                    fallas.append(f"la escala por {fuente} se aparta un {100 * dif:.1f} % de la "
+                                  "elegida: revisar esa medida o sus puntos en la malla")
     # Avisos (no bloquean): la concha casi siempre sale poco profunda con fotogrametría de
     # celular, así que rechazar por esto dejaría fuera casi todos los escaneos.
     avisos = [f"oreja {lado}: concha de {o['profundidad_concha_AID']} AID (< {PROFUNDIDAD_CONCHA_MIN}); "
@@ -461,16 +585,21 @@ def control_calidad(informe):
               if o["profundidad_concha_AID"] < PROFUNDIDAD_CONCHA_MIN]
     if not (esc and esc["factor"]):
         avisos.append("sin escala real: la malla sigue en las unidades arbitrarias de KIRI "
-                      "(dar --aid-mm o --circunferencia-mm)")
+                      "(dar el largo de las orejas y/o la circunferencia)")
     return {"aprobado": not fallas, "fallas": fallas, "avisos": avisos}
 
 
-def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None):
+def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None, orejas_mm=(None, None)):
     """Factor de escala a milímetros a partir de medidas reales de la persona.
 
     Con el AID el factor es directo (los landmarks ya lo miden en la malla). Con la
     circunferencia se compara contra el perímetro horizontal máximo sobre las orejas.
-    Si se dan las dos se usa el AID y la otra sirve de control.
+    Con el largo de una oreja (hélix -> lóbulo, medido con regla) se compara contra la
+    distancia entre esos dos puntos marcados en la malla (informe["largo_oreja_modelo"]).
+
+    Si se da el AID, manda el AID y la circunferencia sirve de control. Si no, se usa la
+    mediana de los factores de circunferencia y orejas (provisional: falta validar cuál
+    es más fiable, ver LIMPIEZA.md); con tres medidas, una mala no arrastra el resultado.
     """
     final = salida / ("3_suavizada.ply" if "suavizada" in informe else "2_cerrada_poisson.ply")
     ms = pymeshlab.MeshSet()
@@ -484,10 +613,33 @@ def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None):
     f_circ = circunferencia_mm / perimetro if circunferencia_mm else None
     if f_aid and f_circ:
         esc["discrepancia"] = round(abs(f_aid - f_circ) / f_aid, 4)
-    factor = f_aid or f_circ
+
+    largos = informe.get("largo_oreja_modelo", {})
+    factores = {"circunferencia": f_circ} if f_circ else {}
+    for lado, mm in zip(("izq", "der"), orejas_mm):
+        if mm:
+            if lado not in largos:
+                raise ValueError(f"se dio el largo de la oreja {lado} pero en el JSON de landmarks "
+                                 "faltan sus puntos (hélix y lóbulo): marcarlos en app.py")
+            factores[f"oreja_{lado}"] = mm / largos[lado]
+    f_otros = float(np.median(list(factores.values()))) if factores else None
+
+    factor = f_aid or f_otros
     if factor:
-        esc |= {"factor": factor, "fuente": "aid" if f_aid else "circunferencia",
+        fuente = "aid" if f_aid else ("+".join(factores) if len(factores) == 1 else
+                                      "mediana(" + ", ".join(factores) + ")")
+        esc |= {"factor": factor, "fuente": fuente,
                 "aid_mm": round(aid * factor, 2), "circunferencia_mm": round(perimetro * factor, 1)}
+        todos = ({"aid": f_aid} if f_aid else {}) | factores
+        if len(todos) > 1:
+            esc["factores"] = {k: round(v, 6) for k, v in todos.items()}
+            # la de la circunferencia contra el AID ya está en "discrepancia" (se juzga aparte)
+            dif = {k: round(abs(v - factor) / factor, 4) for k, v in factores.items()
+                   if not (f_aid and k == "circunferencia")}
+            if dif:
+                esc["discrepancias"] = dif
+        if largos:
+            esc["largo_oreja_mm"] = {lado: round(d * factor, 1) for lado, d in largos.items()}
         ms.clear()
         ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V * factor, face_matrix=F))
         guardar(ms, salida / "malla_final_mm.ply")
@@ -495,16 +647,25 @@ def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None):
 
 
 def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: float = SIGMA_CASCO,
-                 aid_mm: float | None = None, circunferencia_mm: float | None = None):
+                 aid_mm: float | None = None, circunferencia_mm: float | None = None,
+                 orejas_mm: tuple[float | None, float | None] = (None, None)):
     """Repite la limpieza con tolerancias cada vez más estrictas hasta obtener genus 0,
-    escala a mm si hay medidas, y aplica el control de calidad (queda en informe_limpieza.json)."""
+    escala a mm si hay medidas, y aplica el control de calidad (queda en informe_limpieza.json).
+
+    orejas_mm: largo (hélix -> lóbulo) de la oreja izquierda y derecha medido en la persona.
+    """
     for tol in TOLERANCIAS:
         informe = limpiar(ruta_malla, ruta_json, salida, tol, sigma_casco)
         t = informe["cerrada_poisson"]
         print(f"tolerancia {tol}: genus {t['genus']}, bordes {t['boundary_edges']}")
         if t["genus"] == 0 and t["boundary_edges"] == 0 and t["is_mesh_two_manifold"]:
             break
-    informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm)
+    # largo de las orejas en la malla (solo si el JSON trae hélix y lóbulo; los JSON de
+    # 3 puntos no los tienen y el informe queda como antes)
+    largos = largos_oreja(json.loads(ruta_json.read_text(encoding="utf-8"))["puntos"])
+    if largos:
+        informe["largo_oreja_modelo"] = {lado: round(d, 6) for lado, d in largos.items()}
+    informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm, orejas_mm)
     informe["control_calidad"] = control_calidad(informe)
     (salida / "informe_limpieza.json").write_text(json.dumps(informe, indent=2, default=int), encoding="utf-8")
     return informe
