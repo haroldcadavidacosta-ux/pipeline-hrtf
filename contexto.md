@@ -123,14 +123,18 @@ correr el `pip install -r requirements.txt`.
 
 `config.py` tiene rutas de ejemplo y se comparte. Tus rutas reales van en un archivo
 **`config_local.py`** que creas tú en la raíz del proyecto. **No se sube al repositorio**:
-el `.gitignore` lo excluye y cada máquina tiene el suyo. Ejemplo:
+el `.gitignore` lo excluye y cada máquina tiene el suyo. Es opcional: los datos van por
+defecto a `datos\` dentro del proyecto, y el programa del gradado viene con el
+repositorio (`grading\`), así que no hay que configurarlo. Ejemplo:
 
 ```python
-RUTA_DATOS = r"C:\Users\TU_USUARIO\Documents\PROYECTO DE GRADO\pipeline_hrtf\datos"
 BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 MESH2HRTF_PATH = r"C:\Users\TU_USUARIO\Documents\PROYECTO DE GRADO\Mesh2HRTF\Mesh2HRTF-1.3.0\mesh2hrtf"
-GRADING_EXE = r"C:\Users\TU_USUARIO\Documents\PROYECTO DE GRADO\Mesh2HRTF\mesh2hrtf-tools-C\hrtf_mesh_grading_WindowsExe\bin\hrtf_mesh_grading.exe"
 ```
+
+Para comprobar que el gradado funciona en tu máquina:
+`.venv\Scripts\python.exe gradar_malla.py --diagnostico` (la app también lo comprueba al
+arrancar y lo muestra en el paso 4).
 
 **No pongas tus rutas en `config.py`**: si las subes, le cambias las rutas al otro en su
 próximo `pull`.
@@ -164,6 +168,8 @@ Flujo dentro de la app:
 4. Escribe las medidas **en milímetros** (hay un desplegable "Cómo medir") y pulsa
    **Limpiar malla**. Tarda alrededor de un minuto.
 5. Revisa el veredicto y las mallas de cada paso con los botones del visor.
+6. **Gradar malla**: con la limpieza aprobada y alguna medida dada, gradúa los dos lados
+   en unos segundos y deja las mallas listas para Mesh2HRTF.
 
 ---
 
@@ -184,12 +190,17 @@ PROYECTO DE GRADO\
     ├── config_local.py              TUS rutas (no se sube)
     ├── contexto.md                  este archivo
     ├── guia_arranque_pipeline_hrtf.md   guía original de arranque
-    ├── app.py                       la app: puntos, medidas, limpieza, visor
+    ├── app.py                       la app: puntos, medidas, limpieza, gradado, visor
     ├── limpiar_malla.py             la limpieza desde la terminal (la app la usa por debajo)
+    ├── gradar_malla.py              el gradado desde la terminal (ídem); --diagnostico
     ├── vista_previa.py              renders de una malla desde 6 ángulos (PNG)
+    ├── pipeline_hrtf.spec           empaquetado con PyInstaller (ver sección 3b)
+    ├── requirements-empaquetado.txt solo para empaquetar
+    ├── grading\                     hrtf_mesh_grading.exe + sus DLL (sí se sube; ver LEEME.md)
     ├── malla\                       matemática de la malla, sin interfaz (persona A)
     │   ├── alineacion.py            matriz de alineación por 3 puntos
     │   ├── limpieza.py              la limpieza completa y la escala
+    │   ├── gradado.py               el gradado (llama a grading\hrtf_mesh_grading.exe)
     │   ├── oreja.py                 métricas de la oreja y largo hélix–lóbulo
     │   └── LIMPIEZA.md              por qué cada paso es como es (LEER antes de tocar)
     ├── metricas\                    ITD, ILD, distorsión espectral (persona B, por empezar)
@@ -210,8 +221,24 @@ En `datos\salidas\<nombre de la carpeta del escaneo>\`:
 | `3_suavizada.ply` | cerrada y alisada: la que sigue en el pipeline (unidades de KIRI) |
 | `malla_final_mm.ply` | la misma, en milímetros y cortada en el cuello a `CORTE_CUELLO_MM` (solo si se dieron medidas) |
 | `informe_limpieza.json` | todas las métricas, la escala y el veredicto |
+| `3Dmesh_orig.stl` | `malla_final_mm.ply` en STL: la entrada del gradado (y de Mesh2HRTF) |
+| `3Dmesh_graded_left.ply` | graduada: elementos finos en la oreja izquierda |
+| `3Dmesh_graded_right.ply` | graduada: elementos finos en la oreja derecha |
+| `informe_gradado.json` | caras de cada lado, canales estimados por el programa, veredicto |
 
-Cada limpieza **sobrescribe** la anterior de esa carpeta.
+Cada limpieza o gradado **sobrescribe** lo anterior de esa carpeta. Los parámetros del
+gradado están en `config.py` (`GRADING_X_MM`, `GRADING_Y_MM`).
+
+### 3b. App empaquetada (sin Python)
+
+```
+.venv\Scripts\python.exe -m pip install -r requirements-empaquetado.txt
+.venv\Scripts\python.exe -m PyInstaller pipeline_hrtf.spec --noconfirm
+```
+
+Deja `dist\pipeline_hrtf\` (~470 MB): se reparte la carpeta entera y se abre
+`pipeline_hrtf.exe`. Lleva dentro el programa del gradado; los datos van a `datos\` al
+lado del `.exe`. `dist\` y `build\` no se suben.
 
 **Ojo con las unidades en otros programas**: `malla_final_mm.ply` está en mm, pero
 **Blender supone metros** y mostrará "240 m" para una cabeza de 240 mm. En Blender, pon

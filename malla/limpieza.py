@@ -13,8 +13,8 @@ Pasos:
   4. Reparación topológica básica.
   5. Reconstrucción Screened Poisson: puntos originales + puntos del elipsoide
      donde quedó el hueco + tapa plana en el cuello  ->  malla cerrada.
-  6. Alisado del casco (pelo, pozos, pliegues) sin tocar las orejas -> 3_suavizada.ply
-     (--suavizar 0 lo desactiva).
+  6. Alisado del casco (pelo, pozos, pliegues) y del ruido fino de la cara, sin tocar
+     las orejas -> 3_suavizada.ply (--suavizar 0 desactiva los dos).
   7. Control de calidad: topología + proporciones del cráneo (+ escala, si la hay). Si
      falla -> pedir nuevo escaneo. Avisa (sin bloquear) si una concha salió poco profunda.
   8. Escala real (opcional): con el AID o la circunferencia medidos en la persona se
@@ -55,6 +55,7 @@ SIGMA_RELLENO = 0.08            # ancho del promedio gaussiano que pega el relle
 SIGMA_CASCO = 0.08              # ancho del alisado del casco (~12 mm); 0 = no alisar
 CASCO_DESDE, CASCO_HASTA = -0.10, 0.05   # rampa del alisado, en AID respecto al centro del cráneo
 PASOS_TAUBIN = 20               # relajación final tras el alisado
+PASOS_HC_CARA = 10              # pasadas de HC Laplaciano contra el ruido fino (cara, cejas); 0 = no
 NUCA_X, NUCA_Z = 0.15, -0.45    # el alisado también cubre x < -0.15 AID (detrás de las orejas) y z > -0.45 AID
 PROFUNDIDAD_CONCHA_MIN = 0.02   # AID (~3 mm): por debajo se avisa de concha mal capturada
 CIRCUNFERENCIA_Z = (0.35, 0.80) # AID: alturas donde se busca el perímetro máximo (sobre las orejas)
@@ -239,6 +240,33 @@ def suavizar_casco(ms, elip, aid, sigma):
     ms.compute_normal_per_vertex()
     return {"sigma_AID": sigma, "pasos_difusion": pasos,
             "desplazamiento_max_AID": round(float(np.abs(mover).max() / aid), 4)}
+
+
+def alisar_cara(ms, aid, pasos=PASOS_HC_CARA):
+    """Quita el ruido fino que el alisado del casco no cubre (cejas, pestañas, reflejos de
+    los ojos, barba, poros de la cara): el gradado lo toma por curvatura y lo llena de
+    elementos. HC Laplaciano (encoge poco) en toda la cabeza salvo las orejas, con la
+    misma protección que el casco: 0 dentro de RADIO_OREJA y entrada gradual hasta 1.5
+    radios. Taubin se queda corto y el de dos pasos conserva justo el ruido (LIMPIEZA.md)."""
+    m = ms.current_mesh()
+    V0, F = m.vertex_matrix().copy(), m.face_matrix()
+
+    def rampa(t):
+        t = np.clip(t, 0, 1)
+        return t * t * (3 - 2 * t)
+    w = np.ones(len(V0))
+    for lado in (1, -1):                               # canales auditivos en (0, ±AID/2, 0)
+        r = np.linalg.norm(V0 - [0, lado * aid / 2, 0], axis=1) / (RADIO_OREJA * aid)
+        w *= rampa((r - 1) / 0.5)
+
+    for _ in range(pasos):
+        ms.apply_coord_hc_laplacian_smoothing()
+    V = V0 + w[:, None] * (ms.current_mesh().vertex_matrix() - V0)
+    ms.clear()
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=V, face_matrix=F))
+    ms.compute_normal_per_vertex()
+    return {"pasos_hc": pasos,
+            "desplazamiento_max_AID": round(float(np.linalg.norm(V - V0, axis=1).max() / aid), 4)}
 
 
 def topologia(ms):
@@ -530,9 +558,12 @@ def limpiar(ruta_malla: Path, ruta_json: Path, salida: Path, tolerancia: float =
     guardar(ms, salida / "2_cerrada_poisson.ply")
     informe["cerrada_poisson"] = topologia(ms)
 
-    # 6. Alisado del casco (pelo, pozos, pliegues), protegiendo los pabellones
+    # 6. Alisado del casco (pelo, pozos, pliegues) y del ruido fino de la cara,
+    #    protegiendo los pabellones
     if sigma_casco:
         informe["suavizada"] = suavizar_casco(ms, elip, aid, sigma_casco)
+        if PASOS_HC_CARA:
+            informe["suavizada"]["cara"] = alisar_cara(ms, aid)
         informe["reparacion_autointersecciones"]["suavizada"] = reparar_autointersecciones(ms)
         guardar(ms, salida / "3_suavizada.ply")
         informe["suavizada"] |= topologia(ms)

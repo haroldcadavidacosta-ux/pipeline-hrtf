@@ -3,6 +3,10 @@
 __pycache__/
 *.pyc
 
+# Empaquetado (PyInstaller)
+build/
+dist/
+
 # Configuración local de cada máquina
 config_local.py
 

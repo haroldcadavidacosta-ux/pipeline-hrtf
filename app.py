@@ -1,4 +1,4 @@
-"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir y limpiar.
+"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir, limpiar y gradar.
 
 1. Malla y puntos. Se carga el escaneo y se marcan con DOBLE CLIC siete puntos: la
    entrada de los dos canales auditivos y la punta de la nariz (definen la alineación,
@@ -10,10 +10,16 @@
    pantalla, así que da lo mismo que desde la terminal.
 3. Resultado: veredicto del control de calidad, escala, y las mallas de cada paso en
    el mismo visor.
+4. Gradado: gradar_malla.py en un proceso aparte, igual que la limpieza. Al arrancar,
+   la app comprueba que el binario del gradado (grading/) existe y arranca.
 
 Ejecutar:  .venv/Scripts/python.exe app.py   ->  http://localhost:8080
+Empaquetada (pipeline_hrtf.spec), la app se relanza a sí misma para cada tarea:
+  pipeline_hrtf.exe limpiar ...   /   pipeline_hrtf.exe gradar ...   (mismos argumentos
+  que limpiar_malla.py y gradar_malla.py; p. ej. pipeline_hrtf.exe gradar --diagnostico)
 """
 import json
+import multiprocessing
 import os
 import shutil
 import subprocess
@@ -30,10 +36,16 @@ from scipy.spatial import cKDTree
 
 import config
 from malla.alineacion import aplicar_transformacion, matriz_alineacion, residuo_alineacion
+from malla.gradado import MALLA_MM
+from malla.gradado import SALIDAS as SALIDAS_GRADADO
+from malla.gradado import comprobar_binario
 from malla.oreja import PUNTOS_LARGO
 
 RAIZ = Path(__file__).resolve().parent
-LIMPIAR_MALLA = RAIZ / "limpiar_malla.py"
+# Tareas largas que corren en un proceso aparte: subcomando -> script
+TAREAS = {"limpiar": "limpiar_malla.py", "gradar": "gradar_malla.py"}
+# Resultado de comprobar el binario del gradado al arrancar: (bien, mensaje)
+ESTADO_BINARIO: tuple[bool, str] = (False, "sin comprobar")
 RUTA_POR_DEFECTO = Path(config.RUTA_DATOS) / "entrada" / "3Dmesh_orig.stl"
 EXTENSIONES = {".obj", ".ply", ".stl"}
 RESIDUO_MAX = 1e-6
@@ -81,8 +93,11 @@ MALLAS_LIMPIEZA = [
     ("1_limpia_abierta.ply", "1 · limpia abierta"),
     ("2_cerrada_poisson.ply", "2 · cerrada (Poisson)"),
     ("3_suavizada.ply", "3 · suavizada"),
-    ("malla_final_mm.ply", "Final en mm"),
+    (MALLA_MM, "Final en mm"),
+    (SALIDAS_GRADADO["left"], "Graduada izquierda"),
+    (SALIDAS_GRADADO["right"], "Graduada derecha"),
 ]
+MALLAS_EN_MM = {MALLA_MM, *SALIDAS_GRADADO.values()}   # escaladas después de alinear
 
 INSTRUCCIONES_MEDIDAS = """
 **Todas son opcionales.** Sin ninguna, la malla queda sin escala real (en las unidades
@@ -157,10 +172,18 @@ def carpeta_salida(ruta_malla: Path) -> Path:
     return Path(config.RUTA_DATOS) / "salidas" / ruta_malla.resolve().parent.name
 
 
-def ejecutar_limpieza(argumentos: list[str], lineas: list[str]) -> int:
-    """Corre limpiar_malla.py y va dejando su salida en `lineas`. Devuelve el código."""
+def comando_tarea(tarea: str) -> list[str]:
+    """Cómo lanzar una tarea: en desarrollo, su script con el mismo Python; empaquetada,
+    el propio .exe con el subcomando (no hay intérprete ni .py sueltos)."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, tarea]
+    return [sys.executable, str(RAIZ / TAREAS[tarea])]
+
+
+def ejecutar_tarea(tarea: str, argumentos: list[str], lineas: list[str]) -> int:
+    """Corre la tarea y va dejando su salida en `lineas`. Devuelve el código."""
     entorno = os.environ | {"PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
-    with subprocess.Popen([sys.executable, str(LIMPIAR_MALLA), *argumentos], cwd=RAIZ, env=entorno,
+    with subprocess.Popen([*comando_tarea(tarea), *argumentos], cwd=RAIZ, env=entorno,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, encoding="utf-8", errors="replace") as proceso:
         for linea in proceso.stdout:
@@ -189,8 +212,10 @@ class AppPipeline:
         self.ruta_json: Path | None = None
         self.guardado = False                   # el JSON en disco corresponde a los puntos actuales
         self.limpiando = False
+        self.gradando = False
         self.salida: Path | None = None
         self.informe: dict | None = None
+        self.informe_gradado: dict | None = None
         self.cache_visor: dict[Path, tuple[Path, np.ndarray, np.ndarray]] = {}
         # lo que muestra el visor: M lleva coordenadas del escaneo original a las mostradas
         self.vista = {"original": True, "centro": np.zeros(3), "diag": 1.0, "M": np.eye(4)}
@@ -204,7 +229,7 @@ class AppPipeline:
 
     # --- interfaz -----------------------------------------------------------
     def construir_interfaz(self) -> None:
-        ui.label("Pipeline HRTF: alineación, medidas y limpieza").classes("text-2xl")
+        ui.label("Pipeline HRTF: alineación, medidas, limpieza y gradado").classes("text-2xl")
 
         ui.label("1. Malla y puntos").classes("text-xl mt-4")
         with ui.row().classes("w-full items-end"):
@@ -262,6 +287,20 @@ class AppPipeline:
 
         ui.label("3. Resultado").classes("text-xl mt-4")
         self.resultado = ui.column()
+
+        ui.label("4. Gradado para Mesh2HRTF").classes("text-xl mt-4")
+        bien, mensaje = ESTADO_BINARIO
+        ui.label(("Programa de gradado listo: " if bien else "ERROR, el gradado no va a funcionar: ")
+                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
+        ui.label("Necesita la limpieza aprobada y con alguna medida (malla en mm). Deja "
+                 f"{', '.join(SALIDAS_GRADADO.values())} en la carpeta de resultados.")
+        with ui.row().classes("items-center"):
+            self.boton_gradar = ui.button("Gradar malla (izquierda y derecha)", on_click=self.gradar)
+            self.spinner_gradado = ui.spinner(size="lg")
+            self.spinner_gradado.set_visibility(False)
+            self.estado_gradado = ui.label("")
+        self.registro_gradado = ui.log(max_lines=100).classes("w-full h-32")
+        self.resultado_gradado = ui.column()
         ui.timer(0.25, self.seguir_camara)
         self.refrescar()
 
@@ -399,7 +438,7 @@ class AppPipeline:
             self.etiqueta_vista.set_text(f"Cargando {etiqueta}...")
             self.cache_visor[ruta] = await run.io_bound(preparar_resultado, ruta)
         M = self.T.copy()
-        if archivo == "malla_final_mm.ply":      # escalada después de alinear
+        if archivo in MALLAS_EN_MM:
             M = np.diag([*[self.informe["escala"]["factor"]] * 3, 1.0]) @ M
         self.vista.update(original=False, M=M)
         self.etiqueta_vista.set_text(f"Mostrando: {etiqueta}")
@@ -464,24 +503,32 @@ class AppPipeline:
         self.nota_ejes.set_text("(ejes anatómicos)" if self.T is not None else
                                 "(ejes supuestos del archivo hasta marcar los 3 primeros puntos)")
         completo = n == len(LANDMARKS) and self.residuo <= RESIDUO_MAX
-        self.boton_guardar.set_enabled(completo and not self.limpiando)
-        self.boton_limpiar.set_enabled(self.guardado and not self.limpiando)
-        self.boton_cargar.set_enabled(not self.limpiando)
+        ocupado = self.limpiando or self.gradando
+        self.boton_guardar.set_enabled(completo and not ocupado)
+        self.boton_limpiar.set_enabled(self.guardado and not ocupado)
+        self.boton_cargar.set_enabled(not ocupado)
+        se_puede_gradar = (self.salida is not None and (self.salida / MALLA_MM).exists()
+                           and self.informe["control_calidad"]["aprobado"] and ESTADO_BINARIO[0])
+        self.boton_gradar.set_enabled(se_puede_gradar and not ocupado)
 
     def invalidar(self) -> None:
         """Los puntos cambiaron: lo guardado y la limpieza ya no les corresponden."""
         self.guardado = False
-        self.salida, self.informe = None, None
+        self.salida, self.informe, self.informe_gradado = None, None, None
         self.resultado.clear()
+        self.resultado_gradado.clear()
+        self.registro_gradado.clear()
+        self.estado_gradado.set_text("")
         for stl, _, _ in self.cache_visor.values():
             stl.unlink(missing_ok=True)
         self.cache_visor.clear()
         self.refrescar_selector()
 
     def puede_editar(self) -> bool:
-        if self.limpiando:
-            ui.notify("Espera a que termine la limpieza.", type="warning")
-        return not self.limpiando
+        if self.limpiando or self.gradando:
+            ui.notify(f"Espera a que termine {'la limpieza' if self.limpiando else 'el gradado'}.",
+                      type="warning")
+        return not (self.limpiando or self.gradando)
 
     # --- manejadores: puntos --------------------------------------------------
     def al_doble_clic(self, e: events.SceneClickEventArguments) -> None:
@@ -628,7 +675,25 @@ class AppPipeline:
         ui.notify(f"Guardado: {salida_malla.name} y {self.ruta_json.name}", type="positive")
         self.refrescar()
 
-    # --- manejadores: limpieza -------------------------------------------------
+    # --- manejadores: limpieza y gradado ----------------------------------------
+    async def correr_tarea(self, tarea: str, argumentos: list[str], registro: ui.log) -> int:
+        """Corre la tarea en un proceso aparte mostrando su salida en `registro`."""
+        registro.clear()
+        lineas: list[str] = []
+        enviadas = 0
+
+        def volcar() -> None:
+            nonlocal enviadas
+            for linea in lineas[enviadas:]:
+                registro.push(linea)
+            enviadas = len(lineas)
+
+        temporizador = ui.timer(0.3, volcar)
+        codigo = await run.io_bound(ejecutar_tarea, tarea, argumentos, lineas)
+        volcar()
+        temporizador.cancel()
+        return codigo
+
     async def limpiar(self) -> None:
         salida = carpeta_salida(self.ruta)
         argumentos = [str(self.ruta), "--landmarks", str(self.ruta_json), "--salida", str(salida)]
@@ -648,20 +713,7 @@ class AppPipeline:
         self.refrescar()
         self.spinner.set_visibility(True)
         self.estado_limpieza.set_text("Limpiando (tarda unos minutos)...")
-        self.registro.clear()
-        lineas: list[str] = []
-        enviadas = 0
-
-        def volcar() -> None:
-            nonlocal enviadas
-            for linea in lineas[enviadas:]:
-                self.registro.push(linea)
-            enviadas = len(lineas)
-
-        temporizador = ui.timer(0.3, volcar)
-        codigo = await run.io_bound(ejecutar_limpieza, argumentos, lineas)
-        volcar()
-        temporizador.cancel()
+        codigo = await self.correr_tarea("limpiar", argumentos, self.registro)
         self.limpiando = False
         self.spinner.set_visibility(False)
 
@@ -679,6 +731,44 @@ class AppPipeline:
         self.refrescar_selector()
         self.refrescar()
         await self.mostrar_salida("3_suavizada.ply", "3 · suavizada")
+
+    async def gradar(self) -> None:
+        self.gradando = True
+        self.resultado_gradado.clear()
+        self.refrescar()
+        self.spinner_gradado.set_visibility(True)
+        self.estado_gradado.set_text("Gradando los dos lados...")
+        codigo = await self.correr_tarea("gradar", [str(self.salida)], self.registro_gradado)
+        self.gradando = False
+        self.spinner_gradado.set_visibility(False)
+        ruta_informe = self.salida / "informe_gradado.json"
+        informe = json.loads(ruta_informe.read_text(encoding="utf-8")) if ruta_informe.exists() else {}
+        if codigo not in (0, 1) or "aprobado" not in informe:
+            self.estado_gradado.set_text("El gradado falló: ver el registro.")
+            self.refrescar()
+            return
+        self.informe_gradado = informe
+        self.estado_gradado.set_text(f"Terminado. Archivos en {self.salida}")
+        with self.resultado_gradado:
+            if informe["aprobado"]:
+                ui.label("GRADADO OK").classes("text-2xl font-bold text-green-700")
+            else:
+                ui.label("GRADADO FALLIDO").classes("text-2xl font-bold text-red-700")
+            for falla in informe["fallas"]:
+                ui.label(f"✖ {falla}").classes("text-red-700")
+            for aviso in informe["avisos"]:
+                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+            for lado, r in informe["lados"].items():
+                if "caras" in r:
+                    ui.label(f"{r['archivo']}: {r['caras']:,} caras, {r['segundos']} s")
+        for archivo in SALIDAS_GRADADO.values():   # el visor puede tener una versión anterior
+            anterior = self.cache_visor.pop(self.salida / archivo, None)
+            if anterior is not None:
+                anterior[0].unlink(missing_ok=True)
+        self.refrescar_selector()
+        self.refrescar()
+        if informe["aprobado"]:
+            await self.mostrar_salida(SALIDAS_GRADADO["left"], "Graduada izquierda")
 
     def mostrar_resultado(self) -> None:
         inf, cc = self.informe, self.informe["control_calidad"]
@@ -724,5 +814,15 @@ def principal() -> None:
 
 
 if __name__ == "__main__":
-    ui.run(root=principal, title="Pipeline HRTF", port=8080, reload=False,
-           show=True, show_welcome_message=False)
+    multiprocessing.freeze_support()
+    if len(sys.argv) > 1 and sys.argv[1] in TAREAS:
+        # la app empaquetada se relanza a sí misma para cada tarea (ver comando_tarea)
+        import gradar_malla
+        import limpiar_malla
+        {"limpiar": limpiar_malla.principal, "gradar": gradar_malla.principal}[sys.argv[1]](sys.argv[2:])
+    else:
+        ESTADO_BINARIO = comprobar_binario()
+        print(("Gradado: " if ESTADO_BINARIO[0] else "AVISO, el gradado no va a funcionar: ")
+              + ESTADO_BINARIO[1])
+        ui.run(root=principal, title="Pipeline HRTF", port=8080, reload=False,
+               show=True, show_welcome_message=False)

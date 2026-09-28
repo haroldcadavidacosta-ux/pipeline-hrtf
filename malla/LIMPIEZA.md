@@ -25,7 +25,7 @@ Salida en `datos/salidas/<carpeta de la malla>/`:
 |---|---|
 | `1_limpia_abierta.ply` | sin piezas flotantes ni cresta; abierta arriba y en el cuello |
 | `2_cerrada_poisson.ply` | cerrada (Poisson), sin alisar |
-| `3_suavizada.ply` | cerrada y con el casco alisado — **la que sigue en el pipeline** |
+| `3_suavizada.ply` | cerrada, con el casco y la cara alisados — **la que sigue en el pipeline** |
 | `malla_final_mm.ply` | `3_suavizada` escalada a milímetros y cortada en el cuello (solo si se dio una medida) |
 | `informe_limpieza.json` | métricas de cada paso + `control_calidad` (`aprobado`, `fallas`, `avisos`) |
 
@@ -59,6 +59,18 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
    normal del elipsoide. Quita pelo, pozos y pliegues **sin encoger** la cabeza (un
    Laplaciano sí la encoge). Cubre desde las cejas hacia arriba y la nuca detrás de las
    orejas (nudos y pliegues del gorro). **Nunca toca las orejas** (radio 0.30 AID).
+4b. **Alisado de la cara** (`alisar_cara`, `PASOS_HC_CARA = 10`): el casco no cubre la
+   cara, y su ruido fino (cejas, pestañas, reflejos de los ojos, barba, poros) llegaba
+   intacto al gradado, que lo toma por curvatura y lo llena de elementos. 10 pasadas de
+   HC Laplaciano en toda la cabeza con la misma protección de las orejas (0 dentro de
+   0.30 AID, entrada gradual hasta 0.45).
+   - C, gradado izquierdo (`-x 0.5 -y 10`): 47 378 → 39 104 caras; solo la cara
+     14 688 → 9 365. Mueve < 1 mm el 99 % de la cara (máx. ~3 mm, en los pelos de las
+     cejas), la punta de la nariz 0.6 mm, volumen −0.17 %. Métricas de oreja idénticas.
+   - **Probado y descartado**: Taubin (×10–×100) se queda corto (−5 %); el de dos pasos
+     de MeshLab empeora (+6 %) porque conserva los bordes finos, que son justo el ruido.
+     HC ×20/×40 ahorran poco más (−21 %/−24 %) y ya mueven la nariz 1–1.8 mm.
+   - Aun así, más de la mitad de las caras graduadas son de la oreja, que no se alisa.
 5. **Autointersecciones**: se borran las caras que se cruzan con un margen, se cierra el
    hueco y se alisa solo el parche (alisar sin borrar las empeoraba).
 5b. **Túneles** (`reparar_tuneles`): si Poisson deja asas (genus > 0), se localiza cada

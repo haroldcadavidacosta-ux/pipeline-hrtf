@@ -17,7 +17,7 @@ import config
 from malla.limpieza import SIGMA_CASCO, limpiar_auto
 
 
-def principal() -> None:
+def principal(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("malla", type=Path, help="malla original de KIRI (.obj)")
     ap.add_argument("--landmarks", type=Path, help="JSON de app.py (defecto: <malla>_landmarks.json)")
@@ -34,7 +34,7 @@ def principal() -> None:
                          "que es más ancha); ver LIMPIEZA.md")
     ap.add_argument("--suavizar", type=float, default=SIGMA_CASCO, metavar="SIGMA",
                     help=f"ancho del alisado del casco en AID (defecto {SIGMA_CASCO}); 0 = no alisar")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     landmarks = a.landmarks or a.malla.with_name(f"{a.malla.stem}_landmarks.json")
     if not landmarks.exists():

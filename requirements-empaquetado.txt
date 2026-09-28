@@ -1,0 +1,3 @@
+# Solo para construir la app empaquetada (pipeline_hrtf.spec); no hace falta para usarla
+-r requirements.txt
+pyinstaller>=6.10
