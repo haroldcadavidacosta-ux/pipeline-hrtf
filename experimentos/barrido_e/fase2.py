@@ -677,6 +677,7 @@ def escribir_sofas(salida: Path, prog: Progreso, log: Registro) -> dict:
     import mesh2hrtf as m2h
     import sofar as sf
     completas = [e for e, c in prog.datos["condiciones"].items() if c["estado"] == "completa"]
+    control = salida.name != "fase2"        # tanda de control (p. ej. -e 1 -y 5): fuera de las cuatro del barrido
     for e in completas:
         proyecto = salida / f"e_{e}"
         if sorted((proyecto / "Output2HRTF").glob("HRTF_*.sofa")):
@@ -704,11 +705,17 @@ def escribir_sofas(salida: Path, prog: Progreso, log: Registro) -> dict:
             detalle = "; ".join(f"{x:.0f} Hz (no convergio en -e {', '.join(nan[x])})" for x in sorted(nan)) or "ninguna"
             sofa.GLOBAL_Title = f"DIAGNOSTICO barrido -e {e} (NO es una HRTF valida)"
             sofa.GLOBAL_Comment = (
+                f"DIAGNOSTICO, no es una HRTF valida. Barrido de -e, condicion de control {comando_gradado(e)}, "
+                f"oreja izquierda (B), fuera de las cuatro condiciones del barrido. Vector de diagnostico "
+                f"{f[0]:.0f}-{f[-1]:.0f} Hz ({len(f)} frecuencias), sin HRIR. NumCalc de 2022 (sin -adapt_fmmlength), "
+                f"convergencia leida de NC*.out. Frecuencias en NaN (no convergieron en esta condicion): {detalle}. "
+                f"El analisis excluye en cada comparacion las frecuencias que no convergieron en cualquiera de las "
+                f"dos condiciones comparadas." if control else
                 f"DIAGNOSTICO, no es una HRTF valida. Barrido de -e, fase 2, condicion -e {e}, oreja izquierda "
                 f"(B), gradado {comando_gradado(e)}. Vector de diagnostico {f[0]:.0f}-{f[-1]:.0f} Hz ({len(f)} "
                 f"frecuencias), sin HRIR. NumCalc de 2022 (sin -adapt_fmmlength), convergencia leida de NC*.out. "
                 f"Frecuencias en NaN en todas las condiciones: {detalle}. Union calculada sobre las condiciones "
-                f"completas al {ahora()}: -e {', '.join(sorted(completas, key=float))}"
+                f"completas al {ahora()}: -e {', '.join(sorted(completas, key=lambda x: float(x.split("_")[0])))}"
                 + ("" if len(completas) == 4 else " (PROVISIONAL: faltan condiciones)") + ". "
                 + (f"Esas frecuencias quedan EXCLUIDAS del analisis principal, que compara las cuatro condiciones "
                    f"sobre las {len(f) - len(nan)} frecuencias comunes (decision del autor, 2026-09-29); no se "
@@ -853,7 +860,7 @@ def principal() -> None:
         sellar()
         return
     if x.modo == "sofa":            # reescribe los SOFA de diagnóstico desde los de output2hrtf, sin simular
-        salida = BARRIDO / "fase2"
+        salida = BARRIDO / SALIDA_TANDA.get(x.tanda, "fase2")
         escribir_sofas(salida, Progreso(salida, "real"), Registro(salida))
         return
     if x.numcalc is None or (x.modo == "real" and x.tanda is None):
