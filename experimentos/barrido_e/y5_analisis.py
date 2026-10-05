@@ -127,7 +127,9 @@ def principal() -> None:
     c = m["condiciones"]
     m["candidata_produccion"] = {
         "cabeza_mas_fina_que_ref": c["y5"]["cabeza_arista_mediana_por_area_mm"] < c["ref"]["cabeza_arista_mediana_por_area_mm"],
-        "menos_tiempo_que_ref": c["y5"]["tiempo_pared_h"] < c["ref"]["tiempo_pared_h"],
+        # Suma de tiempos por frecuencia: la corrida de -y 5 quedó partida en tres sesiones (2026-09-29 y
+        # 2026-10-05) y su tiempo de pared no es comparable. Criterio acordado antes de reanudar.
+        "menos_tiempo_que_ref": c["y5"]["tiempo_suma_frecuencias_h"] < c["ref"]["tiempo_suma_frecuencias_h"],
         "menos_ram_que_ref": c["y5"]["ram_pico_proceso_gb"] < c["ref"]["ram_pico_proceso_gb"]}
     m["candidata_produccion"]["quinta_candidata"] = all(m["candidata_produccion"].values())
     (SALIDA / "metricas_y5.json").write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -139,7 +141,7 @@ def escribir_informe(m: dict) -> None:
     num, c = F.num, m["condiciones"]
     P, S, R = m["principal_y5_contra_y10"], m["secundaria_y5_contra_ref"], m["y10_contra_ref"]
     L = ["# -e 1 -y 5: resultado frente a las predicciones preinscritas", "",
-         f"Generado {m['generado']} por `experimentos/barrido_e/y5_analisis.py`, escrito antes de tener los datos. "
+         f"Generado {m['generado']} por `experimentos/barrido_e/y5_analisis.py`, escrito antes de tener los datos (con una corrección posterior, declarada en la sección de costo). "
          f"Predicciones: `experimentos/barrido_e/predicciones_e1_y5_2026-09-29.md` (commit {m['predicciones_commit']}).", "",
          "## Predicciones preinscritas", "", "| predicción | valor medido (dB) | ¿cumplida? | nota |", "|---|---|---|---|"]
     for e in m["evaluacion"]:
@@ -164,19 +166,36 @@ def escribir_informe(m: dict) -> None:
           f"(corrimiento mediano {num(ns['mediana_hz'], 0)} Hz, cambio de profundidad mediano "
           f"{num(ns['cambio_profundidad_db']['mediana'], 2)} dB); -e 1 -y 10 pierde {num(100 * nr['fraccion_perdidas'], 0)} %.",
           "", "## Frente a la referencia en las cuatro dimensiones", "",
-          "| | caras | arista mediana por área, cabeza (mm) | RAM pico (GB) | tiempo de pared (h) | SD 4–11 kHz frente a la ref. (dB) | SD 12–16 kHz frente a la ref. (dB) | frecuencias divergidas |",
+          "| | caras | arista mediana por área, cabeza (mm) | RAM pico (GB) | tiempo, suma por frecuencia (h) | SD 4–11 kHz frente a la ref. (dB) | SD 12–16 kHz frente a la ref. (dB) | frecuencias divergidas |",
           "|---|---|---|---|---|---|---|---|"]
     sd_ref = {"y5": S, "y10": R}
     for n in ("ref", "y10", "y5"):
         x = c[n]
         s = sd_ref.get(n)
         L.append(f"| {NOMBRE[n]} | {x['caras']:,}".replace(",", ".") + f" | {num(x['cabeza_arista_mediana_por_area_mm'], 1)}"
-                 f" | {num(x['ram_pico_proceso_gb'])} | {num(x['tiempo_pared_h'])}"
+                 f" | {num(x['ram_pico_proceso_gb'])} | {num(x['tiempo_suma_frecuencias_h'])}"
                  f" | {'—' if s is None else num(s['sd_bandas_db']['4-11']['todas'])} | {'—' if s is None else num(s['sd_bandas_db']['12-16']['todas'])}"
                  f" | {len(x['frecuencias_divergidas'])} |")
     q = m["candidata_produccion"]
+    b, cabeza_ok = P["sd_bandas_db"], m["formula"]["sd_12_16_baja_contra_y10"]
+    L += ["", "Tiempo: suma de los minutos de cada frecuencia, porque la corrida de -e 1 -y 5 quedó partida en tres "
+          "sesiones. Depende de cuántas instancias corrían a la vez, así que es una comparación aproximada; el tiempo "
+          "de pared de las otras dos fue " + "; ".join(f"{NOMBRE[n]} {num(c[n]['tiempo_pared_h'])} h" for n in ("ref", "y10"))
+          + ". -e 1 -y 10 incluye sus tres frecuencias divergidas, que agotaron las 250 iteraciones."]
     L += ["", "## Interpretación", "",
-          f"**La fórmula de frecuencia útil:** {m['formula']['veredicto']}."]
+          "**La hipótesis de partida:** " + (
+              "la predicción decisiva B de 12–16 kHz se cumple: la cabeza explica la banda alta." if cabeza_ok else
+              f"la predicción decisiva B de 12–16 kHz no se cumple ({num(b['12-16']['todas'])} dB, frente a ≥ 1,5 dB "
+              "preinscritos). Según el criterio preinscrito, **la discretización de la cabeza no explica la banda alta**: "
+              "afinar la cabeza de 8,7 a 4,9 mm de arista mediana por área cambia la SD de 12–16 kHz en menos de medio "
+              "decibelio, y contra la referencia la deja igual (3,11 → 3,07 dB). Lo que separa a -e 1 de -e 0,5 en "
+              "12–16 kHz apunta a lo que sigue difiriendo entre ellas, la malla de la oreja; no se ha probado "
+              "directamente, y una diferencia numérica del propio cálculo (FMM, condicionamiento) no queda "
+              "descartada. La parte de "
+              "4–11 kHz se cumple: la oreja manda ahí y la cabeza casi no pesa, sobre todo en el lado ipsilateral."),
+          "",
+          f"**La fórmula de frecuencia útil:** {m['formula']['veredicto']}. La estadística de cola predecía que la "
+          "frecuencia útil de la cabeza subiría de 6,1 a 10,5 kHz y que la SD de 12–16 kHz bajaría; no bajó."]
     if m["formula"]["sd_12_16_baja_contra_y10"]:
         L.append("Se corrige `malla/discretizacion.py` para usar el percentil 90 por caras. **Causa alternativa no "
                  "descartada:** la bajada también podría deberse a mejor condicionamiento del sistema o a un "
