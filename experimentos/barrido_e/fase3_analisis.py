@@ -280,6 +280,8 @@ def cruce_fmm(e: str) -> dict:
     r = {"diametro_m": d, "c_ms": c, "f_cruce_hz": c / (d * UMBRAL_FMM1),
          "metodo_en_la_fase2": sorted(set(metodos.values())), "pasos_con_metodo": len(metodos),
          "primera_frecuencia_fase2_hz": min(metodos)}
+    nodos = np.loadtxt(FASE2 / f"e_{e}" / "ObjectMeshes" / "Reference" / "Nodes.txt", skiprows=1, usecols=(1, 2, 3))
+    r["y_min_mm"], r["y_max_mm"] = float(nodos[:, 1].min() * 1000), float(nodos[:, 1].max() * 1000)
     mem = CRUCE_FMM / f"e_{e}" / "Memory.txt"
     if mem.exists():
         filas = [(float(a), float(b)) for _, a, b in (l.split() for l in mem.read_text().splitlines() if l.strip())]
@@ -394,7 +396,9 @@ def principal() -> None:
                 "banda_sd_hz": BANDA_SD, "banda_notch_hz": BANDA_NOTCH,
                 "direccion_ipsilateral": {"indice": i_ipsi, "azimut": float(pos[i_ipsi, 0]), "elevacion": float(pos[i_ipsi, 1])},
                 "condiciones": {},
-                "cruce_fmm": {e: cruce_fmm(e) for e in TODAS}}
+                "cruce_fmm": {e: cruce_fmm(e) for e in TODAS},
+                "cruce_fmm_biseccion": leer_json(CRUCE_FMM / "biseccion" / "resumen.json")
+                if (CRUCE_FMM / "biseccion" / "resumen.json").exists() else None}
 
     sdf = {}
     for e in COMPARADAS:
@@ -802,36 +806,63 @@ def num(x, d=2) -> str:
     return "—" if x is None else f"{x:.{d}f}".replace(".", ",")
 
 
-def seccion_cruce_fmm(cr: dict) -> list[str]:
-    fs = [x["f_cruce_hz"] for x in cr.values()]
+def seccion_cruce_fmm(cr: dict, bis: dict | None) -> list[str]:
+    fs = {e: x["f_cruce_hz"] for e, x in cr.items()}
     L = ["## Límite inferior del vector: el cruce a FMM de un nivel",
          "",
-         "El vector de diagnóstico empieza en 900 Hz. Esa frontera tiene detrás el criterio del código de NumCalc "
-         "(`NC_Addresses.cpp:65-96`, fuente de 2022; ver `docs/verificacion_numcalc.md`, 3.2 y 3.2b): si la longitud "
-         "de onda dividida por el diámetro de la malla de contorno supera 1,0, NumCalc usa FMM de un nivel en vez de "
-         "multinivel. El diámetro es la diagonal de la caja envolvente de los nodos de la malla (sin la rejilla de "
-         "evaluación), y NumCalc lo imprime en NC.out. Por debajo de f* = c/D el cambio es forzoso; por encima, el "
-         "multinivel es posible pero no seguro (NumCalc todavía estima el número de niveles).",
+         "El vector de diagnóstico empieza en 900 Hz, y esa frontera queda fijada por una cadena de tres pasos:",
          "",
-         "| -e | Diámetro D (m) | c (m/s) | f* = c/D (Hz) | Método en la fase 2 | RAM estimada antes → después del salto |",
-         "|---|---|---|---|---|---|"]
+         "1. **El criterio, leído en el fuente** (`NC_Addresses.cpp:65-96`, fuente de 2022; "
+         "`docs/verificacion_numcalc.md`, 3.2 y 3.2b). Si la longitud de onda dividida por el diámetro de la malla de "
+         "contorno supera 1,0, NumCalc usa FMM de un nivel en vez de multinivel. Ese diámetro es la diagonal de la caja "
+         "envolvente de los nodos de la malla, sin la rejilla de evaluación, y NumCalc lo imprime en NC.out. El cruce "
+         "debería caer entonces en f* = c/D.",
+         "2. **La predicción, calculada desde la geometría de cada malla** (D recalculado desde `Nodes.txt`, igual al de "
+         "NC.out a 6 cifras; c = 343 m/s del NC.inp, sin planos de simetría):",
+         "",
+         "| -e | D (m) | f* = c/D (Hz) |",
+         "|---|---|---|"]
     for e, x in cr.items():
-        s = x.get("salto_ram")
-        salto = (f"{num(s['ram_antes_gb'])} GB a {s['ultima_frecuencia_antes_hz']:.0f} Hz → {num(s['ram_despues_gb'])} GB "
-                 f"a {s['primera_frecuencia_despues_hz']:.0f} Hz") if s else "—"
-        L.append(f"| {e.replace('.', ',')} | {num(x['diametro_m'], 6)} | {x['c_ms']:.0f} | {num(x['f_cruce_hz'], 1)} | "
-                 f"{', '.join(x['metodo_en_la_fase2'])} en {x['pasos_con_metodo']} pasos desde "
-                 f"{x['primera_frecuencia_fase2_hz']:.0f} Hz | {salto} |")
-    L += ["",
-          f"f* va de {num(min(fs), 1)} a {num(max(fs), 1)} Hz según la condición. La RAM estimada por NumCalc "
-          "(`-estimate_ram`, en pasos de 150 Hz; los archivos están en `cruce_fmm/`) cae entre 750 y 900 Hz en las "
-          "cuatro condiciones, que es el intervalo de la rejilla que contiene f*. En 750 Hz, λ/D ≈ 1,10 (por el código, "
-          "un nivel forzoso); en 900 Hz, λ/D ≈ 0,92 y NC.out declara multinivel en las 78 frecuencias de las cuatro condiciones. "
-          "Coincide con el criterio del código hasta la resolución de 150 Hz de esa rejilla: f* no se observó "
-          "directamente, solo que cae entre 750 y 900 Hz.",
+        L.append(f"| {e.replace('.', ',')} | {num(x['diametro_m'], 6)} | {num(x['f_cruce_hz'], 1)} |")
+    L.append("")
+    if bis:
+        b05, b3 = bis["condiciones"]["0.5"], bis["condiciones"]["3"]
+        s05 = {k: v for k, v in b05["corridas"].items()}
+        a, b = b05["biseccion"]["ultimo_un_nivel_hz"], b05["biseccion"]["primero_multinivel_hz"]
+        ra, rb = s05[f"{a:g}"]["ram_estimada_gb"], s05[f"{b:g}"]["ram_estimada_gb"]
+        a3, b3_ = b3["biseccion"]["ultimo_un_nivel_hz"], b3["biseccion"]["primero_multinivel_hz"]
+        L += [f"3. **La observación, a 1 Hz** (`NumCalc -estimate_ram`, que no resuelve el sistema; una frecuencia por "
+              "corrida, sobre copias de los proyectos; `cruce_fmm/biseccion/`). Con -e 0,5, el último paso en un nivel es "
+              f"{a:.0f} Hz y el primero en multinivel {b:.0f} Hz (predicho {num(b05['f_predicha_hz'], 1)}). Con -e 3, "
+              f"{a3:.0f} y {b3_:.0f} Hz (predicho {num(b3['f_predicha_hz'], 1)}). La predicción es diferencial: los dos "
+              f"cruces se separan {bis['diferencial']['observado_hz']:.0f} Hz frente a "
+              f"{num(bis['diferencial']['predicho_hz'], 2)} Hz predichos, en el sentido correcto (la malla de menor D cruza "
+              f"más arriba). En el mismo hertz salta la memoria: la RAM estimada de -e 0,5 cae de {num(ra)} GB a {a:.0f} Hz "
+              f"a {num(rb)} GB a {b:.0f} Hz, {num(ra / rb, 1)} veces menos. Ese salto es el mecanismo de la pared de "
+              "memoria que originó este experimento.",
+              ""]
+    L += ["En todos los puntos de la bisección decidió λ/D > 1. Ningún NC.out trae la tabla de pares de clusters "
+          "cancelados, así que la regla del 75 % (`NC_Addresses.cpp:262-283`) no intervino. La estimación del número de "
+          "niveles (`NC_Addresses.cpp:803-843`) usa solo el número de elementos y su área media, no la frecuencia, así "
+          "que en estas mallas no puede mandar cerca del borde. Queda una precisión: por debajo de f* el nivel único es "
+          "forzoso, y por encima el multinivel es posible pero no está garantizado en general; en estas mallas, los otros "
+          "dos criterios no lo impiden en la zona del cruce. **Alcance:** verificado para las mallas de este trabajo con "
+          "el binario de 2022, no demostrado en general.",
           "",
-          "Consecuencia: 900 Hz es la primera frecuencia de la rejilla de 300 Hz por encima de f*, así que todo el "
-          "vector se resuelve con el mismo método (multinivel). El corte deja de ser una decisión empírica.",
+          f"f* se mueve de {num(min(fs.values()), 1)} a {num(max(fs.values()), 1)} Hz entre condiciones, y no de forma "
+          "monótona en -e. El cambio de D está casi entero en la extensión lateral (y): "
+          + "; ".join(f"-e {e.replace('.', ',')}: de {num(x['y_min_mm'], 1)} a {num(x['y_max_mm'], 1)} mm"
+                      for e, x in cr.items())
+          + ". Con -e 3, el punto más lateral del lado de la oreja simulada retrocede y el del lado opuesto avanza. "
+          "El corte en 900 Hz queda por encima del cruce en las cuatro condiciones, de modo que el vector entero se "
+          "resuelve con el mismo método: NC.out declara multinivel en los 78 pasos de las cuatro condiciones.",
+          "",
+          "**Detalle operativo:** NumCalc solo escribe el método de un paso si cambió respecto al paso anterior "
+          "(`if(ifdiff) NC_FrequencyInformations`, `NC_Main.cpp:383`; `NC_DeclareArrays` devuelve 0, sin imprimir, solo "
+          "cuando el método y el número de niveles son los mismos, `NC_Addresses.cpp:125-134`). En una corrida de varias "
+          "frecuencias, un paso sin la línea hereda el método del último paso que la tiene. Un análisis que lea el método "
+          "paso por paso sin conocer esa regla deja pasos sin método, sin aviso. Por eso la bisección corre una "
+          "frecuencia por vez, y en la fase 2 cada frecuencia es un proceso aparte de NumCalc.",
           ""]
     return L
 
@@ -866,7 +897,7 @@ def escribir_informe(m: dict) -> None:
          f"{m['frecuencias_comunes']} frecuencias comunes. No se interpolan ni se sustituyen. Está declarado también en "
          "el GLOBAL_Comment de los SOFA de diagnóstico (`fase2/sofa/`).",
          "",
-         *seccion_cruce_fmm(m["cruce_fmm"]),
+         *seccion_cruce_fmm(m["cruce_fmm"], m["cruce_fmm_biseccion"]),
          "## Tabla de decisión",
          "",
          "Criterio principal: **SD media en 4–11 kHz** (la banda de la pina). La de 12–16 kHz se reporta como límite "
