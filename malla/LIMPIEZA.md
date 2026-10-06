@@ -54,6 +54,22 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      la tapa se salía del cuerpo y Poisson hacía túneles.
    - Si sale con túneles (genus > 0) se repite con tolerancias más estrictas
      (`TOLERANCIAS`).
+   - **Altura de la tapa del cuello.** La regla es el punto más alto del borde abierto por
+     debajo de las orejas, más `MARGEN_CUELLO`. Supone que ese borde es un anillo más o
+     menos horizontal alrededor del cuello. En A1 no lo era: KIRI captó hombros y
+     torso, pero por detrás la espalda quedó cortada alta (−74 mm, 19 cm detrás de los
+     canales), y la tapa subió a −71 mm y se llevó el cuello entero. Ahora se busca además
+     el plano más bajo (hasta `CUELLO_MAS_BAJO`, cada `PASO_CUELLO`) en que el trozo de la
+     cabeza por encima no toca el borde abierto (`plano_cuello_mas_bajo`): ahí el cuello es
+     un anillo completo. Si queda al menos `BAJADA_CUELLO_MIN` por debajo de la regla del
+     borde, la tapa va en ese plano y a Poisson solo entra el trozo de la cabeza
+     (`cabeza_sobre_plano`); los trozos sueltos, como esa espalda, quedan fuera. Si no, se
+     usa la regla del borde tal cual. En los escaneos aprobados antes (C, B,
+     D, E1) la búsqueda cae a menos de 0,02 AID de la regla del borde, así
+     que siguen exactamente igual. Queda en `informe["tapa_cuello"]` (`regla`, `z_AID`).
+   - **Lo que no arregla:** si la espalda sigue unida al cuello por encima del corte (A
+     B: hasta −105 mm), no hay anillo limpio más abajo y la malla termina por encima del
+     corte en mm (sale el aviso del paso 8).
 4. **Alisado del casco** (`suavizar_casco`): la superficie se trata como un relieve sobre
    el elipsoide; se difunde la distancia al elipsoide y se mueve cada vértice sobre la
    normal del elipsoide. Quita pelo, pozos y pliegues **sin encoger** la cabeza (un
@@ -112,7 +128,7 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
    - Después de escalar, el control de calidad exige el AID dentro de
      `config.AID_MIN_MM`–`AID_MAX_MM`: atrapa errores gruesos de cualquier medida.
 8. **Corte del cuello** (`cortar_cuello`): sobre `malla_final_mm.ply`, plano horizontal
-   en `config.CORTE_CUELLO_MM` (mm respecto del eje de los canales; −150 por defecto) y
+   en `config.CORTE_CUELLO_MM` (mm respecto del eje de los canales; −115, el del barrido de -e) y
    tapa plana. Va en mm, así que solo se hace si hay escala. Quita superficie que el
    gradado igual llenaría de elementos: en B, 67 296 → 63 256 caras graduadas a
    −150 mm y 56 200 a −100 mm (`-x 0.5 -y 10`).
@@ -177,6 +193,8 @@ de pelo aplastado es ~1.1 % de escala), justo por encima de las cejas y de las o
 |---|---|
 | C, D, E1, B | aprobadas |
 | C2 | rechazada (genus 8): el escaneo tiene una cavidad grande en la nuca y tela doblada |
+| A1, A3 | aprobadas y cortadas a −115 mm (A1 gracias a la tapa del cuello del paso 3). A tiene el hombro izquierdo a −92/−100 mm, a la altura del fin de la barbilla: el corte a −115 incluye un trozo de hombro |
+| A2 | aprobada, pero termina en −102 mm: la espalda sigue unida al cuello hasta −105 y el corte a −115 no se aplica |
 
 ## Pendiente / abierto
 

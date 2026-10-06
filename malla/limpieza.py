@@ -50,6 +50,9 @@ TOLERANCIAS = (0.06, 0.045, 0.035, 0.025)   # 0.06 AID ~ 9 mm
 COS_NORMAL = 0.5                # la normal debe apuntar hacia afuera del elipsoide (cos > 0.5)
 ANILLOS_EXTRA = 4               # anillos de vecinos que se quitan alrededor de lo detectado
 MARGEN_CUELLO = 0.02            # el corte del cuello queda justo por encima del borde abierto
+CUELLO_MAS_BAJO = -1.6          # AID: hasta dónde se busca un plano limpio para la tapa del cuello
+PASO_CUELLO = 0.02              # AID: paso de esa búsqueda (~3 mm)
+BAJADA_CUELLO_MIN = 0.05        # AID (~7 mm): la tapa solo baja de la regla del borde si gana al menos esto
 PROFUNDIDAD_POISSON = 10
 SIGMA_RELLENO = 0.08            # ancho del promedio gaussiano que pega el relleno a los datos
 SIGMA_CASCO = 0.08              # ancho del alisado del casco (~12 mm); 0 = no alisar
@@ -123,6 +126,35 @@ def vertices_borde(F):
     E = np.sort(np.r_[F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]], axis=1)
     u, c = np.unique(E, axis=0, return_counts=True)
     return np.unique(u[c == 1])
+
+
+def cabeza_sobre_plano(V, F, z):
+    """Vértices del trozo de la cabeza por encima del plano z: la componente conexa más grande
+    de las caras que quedan enteras por encima (lo que queda suelto, p. ej. un trozo de
+    espalda, no cuenta)."""
+    Fa = F[(V[F, 2] > z).all(axis=1)]
+    n = len(V)
+    A = coo_matrix((np.ones(3 * len(Fa)),
+                    (np.r_[Fa[:, 0], Fa[:, 1], Fa[:, 2]], np.r_[Fa[:, 1], Fa[:, 2], Fa[:, 0]])),
+                   shape=(n, n))
+    _, lab = connected_components(A, directed=False)
+    mayor = np.argmax(np.bincount(lab[Fa[:, 0]]))
+    cab = np.zeros(n, dtype=bool)
+    cab[np.unique(Fa[lab[Fa[:, 0]] == mayor])] = True
+    return cab
+
+
+def plano_cuello_mas_bajo(V, F, aid, z_desde):
+    """El plano más bajo (entre z_desde y CUELLO_MAS_BAJO) en que el trozo de la cabeza no
+    toca el borde abierto del escaneo por debajo de las orejas, es decir, en que el cuello
+    queda como un anillo completo que se puede tapar. None si ninguno lo cumple."""
+    borde = vertices_borde(F)
+    borde = borde[V[borde, 2] < 0]
+    limpio = None
+    for z in np.arange(z_desde, CUELLO_MAS_BAJO * aid, -PASO_CUELLO * aid):
+        if not cabeza_sobre_plano(V, F, z)[borde].any():
+            limpio = z
+    return limpio
 
 
 def segmentos_corte(V, F, z0):
@@ -513,9 +545,23 @@ def limpiar(ruta_malla: Path, ruta_json: Path, salida: Path, tolerancia: float =
     # tapa del cuello: se recorta plano justo por encima del borde abierto y se tapa
     zb = V[vertices_borde(F), 2]
     z_cuello = zb[zb < 0].max() + MARGEN_CUELLO * aid   # z < 0: debajo de las orejas (el hueco de arriba no cuenta)
-    arriba = V[:, 2] > z_cuello
+    # Si el punto más alto del borde está lejos del cuello (un trozo de espalda que el escaneo
+    # cortó alto: A1, a 19 cm detrás de los canales), esa regla sube la tapa y se lleva el
+    # cuello. Entonces la tapa baja al plano más bajo en que el cuello es un anillo completo, y a
+    # Poisson solo entra el trozo de la cabeza. Si no hay uno claramente más abajo, se queda la
+    # regla de siempre (las mallas que ya salían bien no cambian).
+    z_limpio = plano_cuello_mas_bajo(V, F, aid, z_cuello)
+    if z_limpio is not None and z_limpio < z_cuello - BAJADA_CUELLO_MIN * aid:
+        informe["tapa_cuello"] = {"regla": "plano limpio más bajo", "z_AID": round(float(z_limpio / aid), 3),
+                                  "z_por_borde_AID": round(float(z_cuello / aid), 3)}
+        z_cuello = z_limpio
+        arriba = cabeza_sobre_plano(V, F, z_cuello)
+        tapa = tapa_plana(V, F[arriba[F].any(axis=1)], z_cuello, paso)
+    else:
+        informe["tapa_cuello"] = {"regla": "borde", "z_AID": round(float(z_cuello / aid), 3)}
+        arriba = V[:, 2] > z_cuello
+        tapa = tapa_plana(V, F, z_cuello, paso)
     Vp, Np = V[arriba], N[arriba]
-    tapa = tapa_plana(V, F, z_cuello, paso)
 
     # hueco superior: puntos del elipsoide en el casquete, solo donde no hay datos reales.
     # (La banda de pliegues quitados, más abajo, NO se rellena con el elipsoide: en la nuca
