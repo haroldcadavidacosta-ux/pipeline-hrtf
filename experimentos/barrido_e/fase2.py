@@ -52,11 +52,13 @@ from malla.gradado import sin_ventanas_de_error          # noqa: E402
 
 BARRIDO = RAIZ / "datos" / "experimentos" / "barrido_e"
 REGISTRO_SHA = BARRIDO / "fase1" / "sha256.json"
-TANDAS = {"1": ["1", "0.5"], "2": ["3", "2"], "y5": ["1_y5"]}
+TANDAS = {"1": ["1", "0.5"], "2": ["3", "2"], "y5": ["1_y5"],
+          "j2": ["A1_2", "A3_2"], "j05": ["A1_0.5", "A3_0.5"]}   # fase 4: repetibilidad (A)
 # Condiciones sueltas: su propia carpeta de salida, para que sus NaN no toquen los SOFA de las cuatro
-SALIDA_TANDA = {"y5": "fase2_y5"}
+SALIDA_TANDA = {"y5": "fase2_y5", "j2": "fase4_e2", "j05": "fase4_e0.5"}
 # Condiciones fuera del sellado de la fase 1: su SHA-256 quedó en preparacion.json al prepararlas
-PREPARACION = {"1_y5": BARRIDO / "e_1_y5" / "preparacion.json"}
+PREPARACION = {"1_y5": BARRIDO / "e_1_y5" / "preparacion.json"} | {
+    c: BARRIDO / f"e_{c}" / "preparacion.json" for c in ("A1_2", "A3_2", "A1_0.5", "A3_0.5")}
 ORDEN_SECO = ["1", "0.5", "3", "2"]
 FRECUENCIAS_SECO = [900.0, 12000.0]
 
@@ -704,9 +706,12 @@ def escribir_sofas(salida: Path, prog: Progreso, log: Registro) -> dict:
                 sofa.Data_Imag[..., idx] = np.nan
             detalle = "; ".join(f"{x:.0f} Hz (no convergio en -e {', '.join(nan[x])})" for x in sorted(nan)) or "ninguna"
             sofa.GLOBAL_Title = f"DIAGNOSTICO barrido -e {e} (NO es una HRTF valida)"
+            sujeto = (f"prueba de repetibilidad (fase 4), sujeto A, captura {e[4]}, gradado {comando_gradado(e)}, "
+                      "oreja izquierda" if e.startswith("A") else
+                      f"condicion de control {comando_gradado(e)}, oreja izquierda (B)")
             sofa.GLOBAL_Comment = (
-                f"DIAGNOSTICO, no es una HRTF valida. Barrido de -e, condicion de control {comando_gradado(e)}, "
-                f"oreja izquierda (B), fuera de las cuatro condiciones del barrido. Vector de diagnostico "
+                f"DIAGNOSTICO, no es una HRTF valida. Barrido de -e, {sujeto}, fuera de las cuatro condiciones "
+                f"del barrido. Vector de diagnostico "
                 f"{f[0]:.0f}-{f[-1]:.0f} Hz ({len(f)} frecuencias), sin HRIR. NumCalc de 2022 (sin -adapt_fmmlength), "
                 f"convergencia leida de NC*.out. Frecuencias en NaN (no convergieron en esta condicion): {detalle}. "
                 f"El analisis excluye en cada comparacion las frecuencias que no convergieron en cualquiera de las "
