@@ -3,9 +3,9 @@
 ::     experimentos\barrido_e\fase2_tanda.bat 1       tanda 1: -e 1 y luego -e 0.5
 ::     experimentos\barrido_e\fase2_tanda.bat 2       tanda 2: -e 3 y luego -e 2
 ::     experimentos\barrido_e\fase2_tanda.bat seco    prueba en seco (900 y 12000 Hz, ~20 min)
-::     experimentosbarrido_ease2_tanda.bat y5      -e 1 -y 5 (prueba de control)
-::     experimentosbarrido_ease2_tanda.bat j2      fase 4: A1 y A3 con -e 2 (repetibilidad)
-::     experimentosbarrido_ease2_tanda.bat j05     fase 4: A1 y A3 con -e 0.5
+::     experimentosarrido_ease2_tanda.bat y5      -e 1 -y 5 (prueba de control)
+::     experimentosarrido_ease2_tanda.bat j2      fase 4: A1 y A3 con -e 2 (repetibilidad)
+::     experimentosarrido_ease2_tanda.bat j05     fase 4: A1 y A3 con -e 0.5
 ::
 :: ANTES DE LANZAR (el conductor lo comprueba y no arranca si algo falta):
 ::  1. Cerrar VS Code y todo lo demas. Abrir una terminal nueva (cmd) y lanzar desde ahi.
