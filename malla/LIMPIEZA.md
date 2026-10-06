@@ -69,7 +69,7 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      que siguen exactamente igual. Queda en `informe["tapa_cuello"]` (`regla`, `z_AID`).
    - **Lo que no arregla:** si la espalda sigue unida al cuello por encima del corte (A
      B: hasta −105 mm), no hay anillo limpio más abajo y la malla termina por encima del
-     corte en mm (sale el aviso del paso 8).
+     corte en mm, y la malla se rechaza (paso 8).
 4. **Alisado del casco** (`suavizar_casco`): la superficie se trata como un relieve sobre
    el elipsoide; se difunde la distancia al elipsoide y se mueve cada vértice sobre la
    normal del elipsoide. Quita pelo, pozos y pliegues **sin encoger** la cabeza (un
@@ -153,7 +153,8 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      vértices (lo corría 2.4 mm).
    - **Solo se guarda si el resultado es sano**: una pieza, cerrada, orientación coherente, genus 0,
      normales hacia fuera y área de la tapa = área de la sección (sin solapes ni
-     huecos). Si no, `malla_final_mm.ply` queda sin cortar y sale un aviso. Queda en
+     huecos). Si no, o si la malla ya termina por encima del plano, **se rechaza**: sin el
+     corte estándar no es comparable con las demás. Queda en
      `informe["corte_cuello"]`.
 
 ## Circunferencia: qué mide la malla y cómo medir con cinta
@@ -194,7 +195,7 @@ de pelo aplastado es ~1.1 % de escala), justo por encima de las cejas y de las o
 | C, D, E1, B | aprobadas |
 | C2 | rechazada (genus 8): el escaneo tiene una cavidad grande en la nuca y tela doblada |
 | A1, A3 | aprobadas y cortadas a −115 mm (A1 gracias a la tapa del cuello del paso 3). A tiene el hombro izquierdo a −92/−100 mm, a la altura del fin de la barbilla: el corte a −115 incluye un trozo de hombro |
-| A2 | aprobada, pero termina en −102 mm: la espalda sigue unida al cuello hasta −105 y el corte a −115 no se aplica |
+| A2 | rechazada: termina en −102 mm: la espalda sigue unida al cuello hasta −105 y el corte a −115 no se aplica |
 
 ## Pendiente / abierto
 

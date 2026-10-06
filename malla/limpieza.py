@@ -663,10 +663,17 @@ def control_calidad(informe):
     if not (esc and esc["factor"]):
         avisos.append("sin escala real: la malla sigue en las unidades arbitrarias de KIRI "
                       "(dar el largo de las orejas y/o la circunferencia)")
+    # Sin el corte estándar la malla no es comparable con las demás (el cuello termina donde
+    # terminó el escaneo), así que se rechaza. A2: la espalda quedó unida al cuello hasta
+    # −105 mm y la malla terminaba en −102.
     corte = informe.get("corte_cuello")
     if corte and not corte["aplicado"]:
-        avisos.append(f"corte del cuello no aplicado ({corte['motivo']}); malla_final_mm.ply "
-                      "queda sin cortar")
+        if "z_min_mm" in corte:
+            fallas.append(f"el escaneo no llega al corte del cuello (z = {corte['z_mm']} mm): la malla termina en "
+                          f"z = {corte['z_min_mm']} mm. Repetir el escaneo captando el cuello completo, también "
+                          "por detrás (nuca y parte alta de la espalda)")
+        else:
+            fallas.append(f"corte del cuello no aplicado ({corte['motivo']}): la malla quedaría sin el corte estándar")
     return {"aprobado": not fallas, "fallas": fallas, "avisos": avisos}
 
 
@@ -846,7 +853,8 @@ def cortar_cuello(ruta: Path, z_mm: float):
     V, F = ms.current_mesh().vertex_matrix(), ms.current_mesh().face_matrix()
     info = {"z_mm": z_mm, "aplicado": False}
     if V[:, 2].min() >= z_mm:
-        return info | {"motivo": f"la malla ya termina por encima de z = {z_mm} mm"}
+        return info | {"motivo": f"la malla ya termina por encima de z = {z_mm} mm",
+                       "z_min_mm": round(float(V[:, 2].min()), 1)}
     arista = float(np.median(np.linalg.norm(V[F[:, 0]] - V[F[:, 1]], axis=1)))
     z = z_mm
     while np.any(V[:, 2] == z):                  # ningún vértice justo sobre el plano
