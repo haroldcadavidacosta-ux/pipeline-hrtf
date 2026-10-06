@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config                                                    # noqa: E402
 from malla import exportacion                                    # noqa: E402
 from malla.discretizacion import predecir                        # noqa: E402
-from malla.gradado import RUIDO_REINTENTO_MM, REINTENTOS_MAX, sin_ventanas_de_error   # noqa: E402
+from malla.gradado import RUIDO_REINTENTO_MM, REINTENTOS_MAX, salio_bien, sin_ventanas_de_error   # noqa: E402
 from fase1_geometria import aristas, hausdorff, leer_verbose, malla_pymeshlab, RADIO_OREJA_MM   # noqa: E402
 from fase2 import vector_nc, lineas_fisicas, sha256              # noqa: E402
 
@@ -51,7 +51,7 @@ def gradar(carpeta: Path, entrada: Path, malla: str, e: str) -> tuple[subprocess
                               encoding="utf-8", errors="replace", timeout=900), args
 
     r, args = correr("../" + entrada.name)
-    if r.returncode == 0 and (carpeta / malla).exists():
+    if salio_bien(r, carpeta, malla):
         return r, 0, args
     base = trimesh.load(entrada, process=False)
     temporal = carpeta / "3Dmesh_reintento_left.stl"
@@ -59,8 +59,9 @@ def gradar(carpeta: Path, entrada: Path, malla: str, e: str) -> tuple[subprocess
         for intento in range(1, REINTENTOS_MAX + 1):
             ruido = np.random.default_rng(intento).normal(0, RUIDO_REINTENTO_MM, base.vertices.shape)
             trimesh.Trimesh(base.vertices + ruido, base.faces, process=False).export(temporal, file_type="stl")
+            (carpeta / malla).unlink(missing_ok=True)
             r, args = correr(temporal.name)
-            if r.returncode == 0 and (carpeta / malla).exists():
+            if salio_bien(r, carpeta, malla):
                 return r, intento, args
     finally:
         temporal.unlink(missing_ok=True)
@@ -100,7 +101,7 @@ def principal() -> None:
         (carpeta / "grading_verbose.txt").write_text(g.stdout + g.stderr, encoding="utf-8")
         (carpeta / "comando_grading.txt").write_text("hrtf_mesh_grading " + " ".join(args) + "\n", encoding="utf-8")
         r["reintentos_gradado"] = reintentos
-        if g.returncode != 0 or not (carpeta / malla).exists():
+        if not salio_bien(g, carpeta, malla):
             sys.exit(f"el gradado falló (código {g.returncode}) tras {reintentos} reintentos; ver grading_verbose.txt")
     r["comando_gradado"] = (carpeta / "comando_grading.txt").read_text(encoding="utf-8").strip()
     r["verbose"] = leer_verbose((carpeta / "grading_verbose.txt").read_text(encoding="utf-8", errors="replace"))

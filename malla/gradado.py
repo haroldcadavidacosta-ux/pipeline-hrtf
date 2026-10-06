@@ -99,6 +99,15 @@ def preparar_entrada(carpeta: Path) -> dict:
             "aid_mm": informe.get("escala", {}).get("aid_mm")}
 
 
+def salio_bien(r: subprocess.CompletedProcess, carpeta: Path, archivo: str) -> bool:
+    """El intento cuenta solo si el programa terminó bien Y gradó de verdad. Con A1 (-e 0.5) un
+    reintento devolvió código 0 sin remallar ("Faces after remeshing" = "before"): la salida era la
+    malla de entrada, sin soldar."""
+    v = leer_verbose(r.stdout + r.stderr)
+    gradó = "caras_antes" not in v or v.get("caras_despues", v["caras_antes"]) < v["caras_antes"]
+    return r.returncode == 0 and (carpeta / archivo).exists() and gradó
+
+
 def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subprocess.CompletedProcess, int]:
     """Gradúa un lado. El binario (versión de 2022) a veces se cae (0xC0000005) con mallas
     sanas, de forma caótica: la misma malla movida una diezmilésima de mm ya no lo hace
@@ -111,18 +120,19 @@ def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subp
                          "-s", lado, "-v", "-i", entrada, "-o", archivo], carpeta, TIEMPO_MAX_S)
 
     r = correr(ENTRADA)
-    if r.returncode == 0 and (carpeta / archivo).exists():
+    if salio_bien(r, carpeta, archivo):
         return r, 0
     malla = trimesh.load(carpeta / MALLA_MM, process=False)
     temporal = f"3Dmesh_reintento_{lado}.stl"
     try:
         for intento in range(1, REINTENTOS_MAX + 1):
-            registrar(f"  el programa se cayó (código {r.returncode}); reintento {intento} de {REINTENTOS_MAX}")
+            registrar(f"  el programa se cayó o no gradó (código {r.returncode}); reintento {intento} de {REINTENTOS_MAX}")
             ruido = np.random.default_rng(intento).normal(0, RUIDO_REINTENTO_MM, malla.vertices.shape)
             trimesh.Trimesh(malla.vertices + ruido, malla.faces, process=False).export(
                 carpeta / temporal, file_type="stl")
+            (carpeta / archivo).unlink(missing_ok=True)
             r = correr(temporal)
-            if r.returncode == 0 and (carpeta / archivo).exists():
+            if salio_bien(r, carpeta, archivo):
                 return r, intento
     finally:
         (carpeta / temporal).unlink(missing_ok=True)
