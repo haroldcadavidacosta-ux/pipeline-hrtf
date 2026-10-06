@@ -61,6 +61,10 @@ PREPARACION = {"1_y5": BARRIDO / "e_1_y5" / "preparacion.json"} | {
     c: BARRIDO / f"e_{c}" / "preparacion.json" for c in ("A1_2", "A3_2", "A1_0.5", "A3_0.5")}
 ORDEN_SECO = ["1", "0.5", "3", "2"]
 FRECUENCIAS_SECO = [900.0, 12000.0]
+# Tope de frecuencia por condición (fase 4, registrado antes de simular en
+# fase4_sujeto_A_2026-10-05.md): por encima, NumCalc pide más RAM de la que tiene el equipo
+# (A1 -e 0,5: 11-15 GB desde 19,2 kHz; 11,8 GB disponibles). La regla usa 4-14 kHz.
+TOPE_HZ = {"A1_0.5": 18900.0, "A3_0.5": 18900.0}
 
 # Presupuesto estimado (h) con el piloto: ajuste potencial del tiempo por frecuencia y, para
 # manage_numcalc, una emulación de su planificador con 11,7 GB libres y 12 núcleos.
@@ -304,9 +308,12 @@ def verificar(condiciones: list[str], salida: Path, numcalc: Path, seco: bool, h
            {e: [len(vectores[e]), vectores[e][:2], vectores[e][-2:]] for e in ORDEN_SECO})
     copias = {e: vector_nc(fuente(salida / f"e_{e}") / "NC.inp") for e in condiciones}
     primera = next(iter(copias.values()))
+    tope = min(TOPE_HZ.get(e, float("inf")) for e in condiciones)
+    esperado = [f for f in ref if f <= tope]
     anotar("vector de frecuencias idéntico en las copias que se van a simular",
-           all(c == primera for c in copias.values()) and (seco or primera == ref),
-           f"{len(primera)} frecuencias: {primera[:3]}…{primera[-2:]}" + ("" if seco else ", iguales a las de la fase 2"))
+           all(c == primera for c in copias.values()) and (seco or primera == esperado),
+           f"{len(primera)} frecuencias: {primera[:3]}…{primera[-2:]}" + ("" if seco else
+           ", iguales a las de la fase 2" + (f" hasta {tope:.0f} Hz (TOPE_HZ)" if tope < float("inf") else "")))
     fisica = {e: lineas_fisicas(fuente(origen(e)) / "NC.inp") for e in ORDEN_SECO}
     anotar("parámetros de NC.inp idénticos (control, solver, c, rho)",
            all(fisica[e] == fisica["1"] for e in ORDEN_SECO), fisica["1"])
@@ -415,6 +422,9 @@ def preparar(e: str, salida: Path, numcalc: Path, seco: bool, log: Registro) -> 
         "*.out", "be.out", "*.blend", "Memory.txt", "Output2HRTF", "NC*_log.txt", "manage_numcalc_*"))
     if seco:
         recortar(proyecto, FRECUENCIAS_SECO)
+    elif e in TOPE_HZ:
+        recortar(proyecto, [f for f in vector_nc(fuente(proyecto) / "NC.inp") if f <= TOPE_HZ[e]])
+        log(f"e_{e}: vector recortado hasta {TOPE_HZ[e]:.0f} Hz (TOPE_HZ)")
     log(f"e_{e}: proyecto copiado; estimando RAM (NumCalc -estimate_ram)...")
     r = subprocess.run([str(numcalc / "NumCalc.exe"), "-estimate_ram"], cwd=fuente(proyecto),
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)

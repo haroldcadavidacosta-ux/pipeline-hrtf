@@ -74,3 +74,32 @@ fin de la barbilla, así que a −115 mm su malla incluye un trozo de hombro que
 otra altura de corte: cambiaría la regla justo en la medición que define el umbral (decisión del autor). Queda como
 limitación: el trozo de hombro puede variar entre capturas y sumarse al piso de ruido, sobre todo por debajo de unos
 3–4 kHz.
+
+## Primera pasada (-e 2) y preparación de la definitiva (-e 0,5)
+
+**Resultado del par a -e 2 (orientativo):** piso de 2,54 dB en 4–11 kHz y 35 % de muescas perdidas; elige -e 2
+(`datos/experimentos/barrido_e/fase4/informe_e2.md`). Ese piso incluye el error de gradar las dos capturas con -e 2;
+la medición definitiva es el par a -e 0,5.
+
+**Gradado de A1 a -e 0,5.** El gradador de 2022 se caía con la malla tal cual (fallo conocido, caótico: no se
+cae con la misma malla cortada a −110 mm ni sin cortar). Se gradó al primer reintento con la misma malla escrita en
+otro orden, sin mover ningún punto (commit 461a08a). El resultado depende un poco del orden (52 656 a 53 018 caras
+en cinco órdenes; la usada tiene 52 590): queda como limitación. Ninguna malla anterior del barrido ni de A
+necesitó reintento.
+
+## Tope de frecuencia del par a -e 0,5 (2026-10-05, antes de simular)
+
+**El par a -e 0,5 se simula de 900 Hz a 18,9 kHz (61 de las 78 frecuencias), igual para las dos capturas.**
+
+- **Motivo:** la memoria del equipo. Por encima de 18,9 kHz, NumCalc estima entre 11 y 15,4 GB por frecuencia
+  para A1 (13,0 GB como máximo para A3), y el equipo dispone de 11,8 GB con todo cerrado. En el barrido, el
+  pico real fue el 95 % de lo estimado (B -e 0,5: 10,39 de 10,97 GB). Con el tope, lo más caro pide 10,46 GB.
+  Gráfica: `datos/experimentos/barrido_e/fase4/ram_por_frecuencia.png`.
+- **No cambia la regla:** usa la SD en 4–11 kHz y las muescas entre 4 y 14 kHz. Las bandas descriptivas (0,9–4 y
+  12–16 kHz) también quedan enteras.
+- **Mismo tipo de decisión que el límite inferior del vector** (900 Hz, también impuesto por la memoria) y que la
+  exclusión de 23,4–24 kHz del análisis principal.
+- **Lo que se pierde:** la descripción del par por encima de 19 kHz. Si hiciera falta, esas frecuencias se pueden
+  simular después en un equipo con más memoria: cada frecuencia de NumCalc es independiente.
+- Implementado en el conductor (`TOPE_HZ` en `fase2.py`), que comprueba antes de simular que las copias tienen
+  exactamente el vector del barrido hasta 18,9 kHz.
