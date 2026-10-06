@@ -14,10 +14,15 @@ app y `gradar_malla.py` lo encuentran solos en esta carpeta (no hay que configur
   binario no incluye. Oficialmente solo se soporta en Linux; para actualizar, compilar
   una vez y reemplazar el `.exe` (los parámetros son los mismos).
 - **Error conocido**: con algunas mallas sanas se cae (código 0xC0000005) de forma
-  caótica: la misma malla movida 0.0001 mm ya no lo hace caer, y no hay una zona "mala"
-  que limpiar (B limpiada en otro PC: el lado izquierdo se caía siempre con el STL).
-  `malla/gradado.py` reintenta hasta 5 veces con la malla movida al azar ~0.0001 mm y lo
-  deja como aviso en `informe_gradado.json`. Quizá la versión de 2024 no lo tenga.
+  caótica: depende de detalles internos, no de la geometría. A1 con -e 0.5 se caía
+  cortada a −115 mm, pero no cortada a −110 mm ni sin cortar; no hay una zona "mala" que
+  limpiar. `malla/gradado.py` reintenta hasta 5 veces con **la misma malla escrita en otro
+  orden** (vértices y caras permutados: ningún punto se mueve), que con A1 funcionó en
+  5 de 5 órdenes, y lo deja como aviso en `informe_gradado.json`. El resultado depende un
+  poco del orden (52 656 a 53 018 caras en esos 5 intentos). Antes se reintentaba con la
+  malla movida ~0.0001 mm: con A1 eso dejaba al programa terminando sin remallar
+  (código 0 y "Faces after" = "before"), así que ahora un intento solo cuenta si de verdad
+  bajó el número de caras. Quizá la versión de 2024 no tenga este error.
 - Licencias: el programa, MIT (`LICENSE_hrtf_mesh_grading.txt`); las DLL de MSYS2,
   BSD de 3 cláusulas.
 - Si se usa, citar: T. Palm, S. Koch, F. Brinkmann y M. Alexa, "Curvature-adaptive mesh

@@ -30,7 +30,6 @@ SALIDAS = {"left": "3Dmesh_graded_left.ply", "right": "3Dmesh_graded_right.ply"}
 MALLA_MM = "malla_final_mm.ply"
 TIEMPO_MAX_S = 600              # por lado; con una malla sana tarda segundos
 REINTENTOS_MAX = 5              # si el programa se cae (ver gradar_lado)
-RUIDO_REINTENTO_MM = 1e-4       # desviación del movimiento al azar de cada reintento
 DLL_NO_ENCONTRADA = 0xC0000135  # código de salida de Windows cuando falta una DLL
 
 
@@ -108,11 +107,25 @@ def salio_bien(r: subprocess.CompletedProcess, carpeta: Path, archivo: str) -> b
     return r.returncode == 0 and (carpeta / archivo).exists() and gradó
 
 
+def reordenada(malla: trimesh.Trimesh, semilla: int) -> trimesh.Trimesh:
+    """La misma malla con los vértices y las caras en otro orden (y cada cara empezando en otro
+    vértice, misma orientación). La geometría no cambia en nada: ni un punto se mueve."""
+    rng = np.random.default_rng(semilla)
+    pv = rng.permutation(len(malla.vertices))
+    nuevo = np.empty_like(pv)
+    nuevo[pv] = np.arange(len(pv))
+    F = nuevo[np.asarray(malla.faces)][rng.permutation(len(malla.faces))]
+    return trimesh.Trimesh(np.asarray(malla.vertices)[pv], np.roll(F, int(rng.integers(3)), axis=1), process=False)
+
+
 def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subprocess.CompletedProcess, int]:
     """Gradúa un lado. El binario (versión de 2022) a veces se cae (0xC0000005) con mallas
-    sanas, de forma caótica: la misma malla movida una diezmilésima de mm ya no lo hace
-    caer (probado con B del otro PC). Si se cae, se reintenta con copias movidas
-    al azar RUIDO_REINTENTO_MM, muy por debajo de cualquier detalle que importe.
+    sanas, de forma caótica: depende de detalles internos, no de la geometría. A1 (-e 0.5)
+    se caía cortada a -115 mm y no a -110, ni sin cortar. Si se cae (o termina sin remallar),
+    se reintenta con la MISMA malla escrita en otro orden (reordenada): con A1 funcionó en
+    5 de 5 órdenes. Antes se movía la malla 0.0001 mm, pero con A1 eso dejaba al programa
+    sin remallar en 15 de 15 intentos. El resultado depende un poco del orden (52 656 a 53 018
+    caras en esos 5), así que el reintento queda anotado en el informe.
     Devuelve el último resultado y cuántos reintentos hicieron falta."""
     def correr(entrada: str) -> subprocess.CompletedProcess:
         # nombres relativos a la carpeta: el programa no abre rutas con tildes ("Prueba á")
@@ -127,9 +140,7 @@ def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subp
     try:
         for intento in range(1, REINTENTOS_MAX + 1):
             registrar(f"  el programa se cayó o no gradó (código {r.returncode}); reintento {intento} de {REINTENTOS_MAX}")
-            ruido = np.random.default_rng(intento).normal(0, RUIDO_REINTENTO_MM, malla.vertices.shape)
-            trimesh.Trimesh(malla.vertices + ruido, malla.faces, process=False).export(
-                carpeta / temporal, file_type="stl")
+            reordenada(malla, intento).export(carpeta / temporal, file_type="stl")
             (carpeta / archivo).unlink(missing_ok=True)
             r = correr(temporal)
             if salio_bien(r, carpeta, archivo):
@@ -177,7 +188,7 @@ def gradar(carpeta: Path, registrar=print) -> dict:
             continue
         if reintentos:
             informe["avisos"].append(f"{lado}: el programa se cayó y salió al reintento {reintentos} "
-                                     f"(malla movida ~{RUIDO_REINTENTO_MM} mm)")
+                                     "(la misma malla escrita en otro orden)")
         g = trimesh.load(carpeta / archivo, process=False)
         res |= {"caras": len(g.faces), "cerrada": bool(g.is_watertight),
                 "piezas": len(g.split(only_watertight=False))}

@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config                                                    # noqa: E402
 from malla import exportacion                                    # noqa: E402
 from malla.discretizacion import predecir                        # noqa: E402
-from malla.gradado import RUIDO_REINTENTO_MM, REINTENTOS_MAX, salio_bien, sin_ventanas_de_error   # noqa: E402
+from malla.gradado import REINTENTOS_MAX, reordenada, salio_bien, sin_ventanas_de_error   # noqa: E402
 from fase1_geometria import aristas, hausdorff, leer_verbose, malla_pymeshlab, RADIO_OREJA_MM   # noqa: E402
 from fase2 import vector_nc, lineas_fisicas, sha256              # noqa: E402
 
@@ -57,8 +57,7 @@ def gradar(carpeta: Path, entrada: Path, malla: str, e: str) -> tuple[subprocess
     temporal = carpeta / "3Dmesh_reintento_left.stl"
     try:
         for intento in range(1, REINTENTOS_MAX + 1):
-            ruido = np.random.default_rng(intento).normal(0, RUIDO_REINTENTO_MM, base.vertices.shape)
-            trimesh.Trimesh(base.vertices + ruido, base.faces, process=False).export(temporal, file_type="stl")
+            reordenada(base, intento).export(temporal, file_type="stl")
             (carpeta / malla).unlink(missing_ok=True)
             r, args = correr(temporal.name)
             if salio_bien(r, carpeta, malla):
