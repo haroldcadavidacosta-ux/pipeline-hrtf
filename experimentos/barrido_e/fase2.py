@@ -53,12 +53,14 @@ from malla.gradado import sin_ventanas_de_error          # noqa: E402
 BARRIDO = RAIZ / "datos" / "experimentos" / "barrido_e"
 REGISTRO_SHA = BARRIDO / "fase1" / "sha256.json"
 TANDAS = {"1": ["1", "0.5"], "2": ["3", "2"], "y5": ["1_y5"],
-          "j2": ["A1_2", "A3_2"], "j05": ["A1_0.5", "A3_0.5"]}   # fase 4: repetibilidad (A)
+          "j2": ["A1_2", "A3_2"], "j05": ["A1_0.5", "A3_0.5"],   # fase 4: repetibilidad (A)
+          "j1": ["A1_1", "A3_1"]}                                       # fase 4: par y réplica a -e 1
 # Condiciones sueltas: su propia carpeta de salida, para que sus NaN no toquen los SOFA de las cuatro
-SALIDA_TANDA = {"y5": "fase2_y5", "j2": "fase4_e2", "j05": "fase4_e0.5"}
+SALIDA_TANDA = {"y5": "fase2_y5", "j2": "fase4_e2", "j05": "fase4_e0.5", "j1": "fase4_e1"}
 # Condiciones fuera del sellado de la fase 1: su SHA-256 quedó en preparacion.json al prepararlas
 PREPARACION = {"1_y5": BARRIDO / "e_1_y5" / "preparacion.json"} | {
-    c: BARRIDO / f"e_{c}" / "preparacion.json" for c in ("A1_2", "A3_2", "A1_0.5", "A3_0.5")}
+    c: BARRIDO / f"e_{c}" / "preparacion.json"
+    for c in ("A1_2", "A3_2", "A1_0.5", "A3_0.5", "A1_1", "A3_1")}
 ORDEN_SECO = ["1", "0.5", "3", "2"]
 FRECUENCIAS_SECO = [900.0, 12000.0]
 # Tope de frecuencia por condición (fase 4, registrado antes de simular en
@@ -73,7 +75,7 @@ ESTIMADO_H = {"3": {"en_serie": 3.3, "manage_numcalc": 0.6}, "2": {"en_serie": 3
               # -e 1 -y 5: interpolado por caras entre -e 1 (3,32 h) y -e 0,5 (6,05 h) reales de la fase 2
               "1_y5": {"en_serie": None, "manage_numcalc": 4.3}}
 # fase 4 (A): las mismas de B para cada -e (las mallas tienen un tamaño parecido)
-ESTIMADO_H |= {f"A{x}_{e}": ESTIMADO_H[e] for x in ("A", "C") for e in ("2", "0.5")}
+ESTIMADO_H |= {f"A{x}_{e}": ESTIMADO_H[e] for x in ("A", "C") for e in ("2", "0.5", "1")}
 
 MARGEN_RAM = 1.0             # factor de seguridad sobre la estimación de NumCalc. manage_numcalc
                              # usa 1.05, pero con todo cerrado este equipo deja 11,0-11,3 GB libres y

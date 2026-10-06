@@ -24,11 +24,11 @@ set NUMCALC=C:\Users\Usuario\Documents\PROYECTO DE GRADO\Mesh2HRTF\mesh2hrtf-too
 set TANDA=%~1
 if "%TANDA%"=="" (
     echo Tanda 1: -e 1 y luego -e 0.5    Tanda 2: -e 3 y luego -e 2    y5: -e 1 -y 5    seco: prueba en seco
-    echo j2: A1 y C con -e 2    j05: A1 y C con -e 0.5   (fase 4, repetibilidad)
-    set /p TANDA=Que tanda quieres correr? [1 / 2 / y5 / j2 / j05 / seco]:
+    echo j2: A1 y C con -e 2    j05: A1 y C con -e 0.5    j1: A1 y C con -e 1   (fase 4)
+    set /p TANDA=Que tanda quieres correr? [1 / 2 / y5 / j2 / j05 / j1 / seco]:
 )
-if /i not "%TANDA%"=="1" if /i not "%TANDA%"=="2" if /i not "%TANDA%"=="y5" if /i not "%TANDA%"=="j2" if /i not "%TANDA%"=="j05" if /i not "%TANDA%"=="seco" (
-    echo Tanda no valida: "%TANDA%". Debe ser 1, 2, y5, j2, j05 o seco.
+if /i not "%TANDA%"=="1" if /i not "%TANDA%"=="2" if /i not "%TANDA%"=="y5" if /i not "%TANDA%"=="j2" if /i not "%TANDA%"=="j05" if /i not "%TANDA%"=="j1" if /i not "%TANDA%"=="seco" (
+    echo Tanda no valida: "%TANDA%". Debe ser 1, 2, y5, j2, j05, j1 o seco.
     pause
     exit /b 1
 )

@@ -103,3 +103,34 @@ necesitó reintento.
   simular después en un equipo con más memoria: cada frecuencia de NumCalc es independiente.
 - Implementado en el conductor (`TOPE_HZ` en `fase2.py`), que comprueba antes de simular que las copias tienen
   exactamente el vector del barrido hasta 18,9 kHz.
+
+## Resultado del par a -e 0,5 (definitivo para la regla)
+
+Piso de 2,69 dB en 4–11 kHz y 43 % de muescas perdidas (`fase4/informe_e0.5.md`). Por SD elige -e 2 y por
+muescas -e 3: **la regla registrada elige -e 2**, el -e más grueso aceptable. -e 1 y -e 1 -y 5 también pasan.
+
+## Par y réplica a -e 1 (2026-10-06, antes de simular)
+
+Antes de fijar el -e de producción se simulan A1 y A3 a -e 1 (`-x 0.5 -y 10 -e 1`, como el -e 1 del
+barrido), con las 78 frecuencias: piden como máximo 6,7 GB. No cambia la regla ni su resultado; informa la
+elección de producción entre -e 2 (el que elige la regla) y -e 1 / -e 1 -y 5.
+
+Se calcula con `fase4_replica.py` (validado: con los datos de B reproduce la tabla del barrido) y con
+`fase4_analisis.py 1`. Los datos de A a -e 2 y a -e 0,5 ya están simulados, pero la comparación entre ellos
+**no se ha calculado** antes de escribir estas predicciones.
+
+**Predicciones**, para cada captura (A y C), contra su propia versión a -e 0,5:
+
+| # | Qué | Predicción | Si no se cumple |
+|---|---|---|---|
+| R1 | -e 1: SD en 4–11 kHz | entre 0,7 y 1,4 dB (B: 1,01) | el costo de -e 1 depende de la cabeza |
+| R2 | -e 1: corrimiento mediano de la muesca | \|mediana\| ≤ 50 Hz (B: −4 Hz) | -e 1 también sesga las muescas |
+| R3 | -e 2: corrimiento mediano de la muesca | mayor que +40 Hz, hacia arriba (B: +87 Hz) | el sesgo de -e 2 era propio de B |
+| R4 | -e 2: SD en 4–11 kHz | entre 1,0 y 2,0 dB (B: 1,44) | el costo de -e 2 depende de la cabeza |
+| R5 | Par A–C a -e 1: SD en 4–11 kHz (descriptivo) | entre 2,4 y 2,9 dB (pisos medidos: 2,54 a -e 2, 2,69 a -e 0,5) | — |
+
+**Cómo pesa en la decisión de producción.** Si R2 y R3 se cumplen en las dos capturas, el sesgo sistemático de
+-e 2 en las muescas, que -e 1 no tiene, se repite en una segunda cabeza, y eso respalda recomendar -e 1 -y 5 para
+producción (misma oreja que -e 1, converge en las 78 frecuencias). Si R3 no se cumple, el sesgo era propio de
+B y -e 2 queda como recomendación. Con -y 10, -e 1 podría no converger en 23,4–24 kHz, como en B;
+no afecta a estas comparaciones, que llegan a 18,9 kHz.
