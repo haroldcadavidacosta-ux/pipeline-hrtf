@@ -51,3 +51,26 @@ Valores del barrido en B, frente a -e 0,5:
 Si hay tiempo, simular también la captura A de A con -e 1 y compararla con su -e 0,5. Si la SD de 4–11 kHz se
 parece a la de B (1,01 dB), el barrido se generaliza a una segunda cabeza y el supuesto de arriba pierde peso.
 No cambia la regla de decisión; solo se reporta.
+
+## Elección del par (2026-10-05, antes de simular)
+
+Se hicieron tres capturas seguidas de A (A, B, C). El criterio para elegir el par es solo que la malla sea válida
+con la misma regla del barrido; no depende de ningún resultado acústico:
+
+| Captura | Limpieza | Corte del cuello a −115 mm (el de B) |
+|---|---|---|
+| A1 | aprobada | aplicado, un anillo |
+| A2 | aprobada | **no aplicado**: la espalda sigue unida al cuello hasta −105 mm y la malla termina en −102 mm |
+| A3 | aprobada | aplicado, un anillo |
+
+**El par es A1 + A3, con A1 como referencia.** A2 queda fuera.
+
+A1 solo llega al corte gracias a la corrección de la tapa del cuello en la limpieza (commit 6631606): con la
+regla anterior perdía el cuello entero (terminaba en −71 mm). Las mallas aprobadas antes, incluida B, no
+cambian con esa corrección.
+
+**El corte sigue en −115 mm, la regla del barrido.** A tiene el hombro izquierdo a −92/−100 mm, a la altura del
+fin de la barbilla, así que a −115 mm su malla incluye un trozo de hombro que B no tenía. No se analiza con
+otra altura de corte: cambiaría la regla justo en la medición que define el umbral (decisión del autor). Queda como
+limitación: el trozo de hombro puede variar entre capturas y sumarse al piso de ruido, sobre todo por debajo de unos
+3–4 kHz.
