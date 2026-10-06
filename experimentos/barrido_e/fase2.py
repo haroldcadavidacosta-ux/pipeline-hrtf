@@ -68,6 +68,8 @@ ESTIMADO_H = {"3": {"en_serie": 3.3, "manage_numcalc": 0.6}, "2": {"en_serie": 3
               "1": {"en_serie": 7.6, "manage_numcalc": 4.3}, "0.5": {"en_serie": 9.0, "manage_numcalc": 7.2},
               # -e 1 -y 5: interpolado por caras entre -e 1 (3,32 h) y -e 0,5 (6,05 h) reales de la fase 2
               "1_y5": {"en_serie": None, "manage_numcalc": 4.3}}
+# fase 4 (A): las mismas de B para cada -e (las mallas tienen un tamaño parecido)
+ESTIMADO_H |= {f"A{x}_{e}": ESTIMADO_H[e] for x in ("A", "C") for e in ("2", "0.5")}
 
 MARGEN_RAM = 1.0             # factor de seguridad sobre la estimación de NumCalc. manage_numcalc
                              # usa 1.05, pero con todo cerrado este equipo deja 11,0-11,3 GB libres y
