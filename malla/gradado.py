@@ -10,7 +10,7 @@ gradúa una vez por lado:
   informe_gradado.json
 
 El binario (grading/, con sus DLL) viene con la app; su ruta es config.GRADING_EXE.
-Parámetros en config.py (GRADING_X_MM, GRADING_Y_MM).
+Parámetros en config.py (GRADING_X_MM, GRADING_E_MM, GRADING_Y_MM).
 """
 import ctypes
 import json
@@ -129,7 +129,7 @@ def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subp
     Devuelve el último resultado y cuántos reintentos hicieron falta."""
     def correr(entrada: str) -> subprocess.CompletedProcess:
         # nombres relativos a la carpeta: el programa no abre rutas con tildes ("Prueba á")
-        return ejecutar(["-x", str(config.GRADING_X_MM), "-y", str(config.GRADING_Y_MM),
+        return ejecutar(["-x", str(config.GRADING_X_MM), "-e", str(config.GRADING_E_MM), "-y", str(config.GRADING_Y_MM),
                          "-s", lado, "-v", "-i", entrada, "-o", archivo], carpeta, TIEMPO_MAX_S)
 
     r = correr(ENTRADA)
@@ -154,7 +154,7 @@ def gradar(carpeta: Path, registrar=print) -> dict:
     """Gradúa los dos lados. Devuelve (y guarda) el informe; "aprobado" dice si salió bien."""
     carpeta = Path(carpeta)
     informe = {"binario": str(config.GRADING_EXE),
-               "parametros": {"x_mm": config.GRADING_X_MM, "y_mm": config.GRADING_Y_MM},
+               "parametros": {"x_mm": config.GRADING_X_MM, "e_mm": config.GRADING_E_MM, "y_mm": config.GRADING_Y_MM},
                "lados": {}, "avisos": [], "fallas": []}
     ok, mensaje = comprobar_binario()
     registrar(mensaje)

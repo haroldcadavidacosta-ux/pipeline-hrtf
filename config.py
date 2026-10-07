@@ -25,8 +25,13 @@ MESH2HRTF_PATH = r"C:\ruta\de\ejemplo\Mesh2HRTF-1.3.0\mesh2hrtf"
 GRADING_EXE = str(CARPETA_RECURSOS / "grading" / "hrtf_mesh_grading.exe")
 
 # --- Gradado (hrtf_mesh_grading) --------------------------------------------
-GRADING_X_MM = 0.5                # arista mínima (en la oreja); -e (error máx.) = -x
-GRADING_Y_MM = 10.0               # arista máxima (lejos de la oreja)
+# -e 1 -y 5: elegido para producción en el barrido de -e (fase 4, 2026-10-07; ver
+# experimentos/barrido_e/fase4_sujeto_A_2026-10-05.md). La regla del barrido dice que -e 2 es el más
+# grueso aceptable, pero -e 2 corre las muescas de la pina hacia arriba de forma sistemática (+87 a +165 Hz en
+# tres capturas) y -e 1 mucho menos; -y 5 hace que converja en todas las frecuencias con el NumCalc de 2022.
+GRADING_X_MM = 0.5                # arista mínima (en la oreja)
+GRADING_E_MM = 1.0                # error geométrico máximo (-e); antes no se pasaba (el binario usa 0.5)
+GRADING_Y_MM = 5.0                # arista máxima (lejos de la oreja); antes 10
 
 # --- Geometría ------------------------------------------------------------
 CORTE_CUELLO_MM = -115.0          # respecto del eje interaural
