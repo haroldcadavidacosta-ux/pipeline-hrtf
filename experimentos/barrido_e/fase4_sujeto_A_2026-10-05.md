@@ -134,3 +134,44 @@ Se calcula con `fase4_replica.py` (validado: con los datos de B reproduce la tab
 producción (misma oreja que -e 1, converge en las 78 frecuencias). Si R3 no se cumple, el sesgo era propio de
 B y -e 2 queda como recomendación. Con -y 10, -e 1 podría no converger en 23,4–24 kHz, como en B;
 no afecta a estas comparaciones, que llegan a 18,9 kHz.
+
+## Resultado del par y la réplica a -e 1 (2026-10-07)
+
+78/78 frecuencias convergidas en las dos capturas (también 23,4–24 kHz, que con B divergían a -e 1).
+Informes: `fase4/informe_replica.md`, `fase4/informe_e1.md`, `fase4/informe_robustez_sd.md`.
+
+| # | Predicción | A1 | A3 | ¿Se cumple? |
+|---|---|---|---|---|
+| R1 | -e 1: SD 4–11 kHz entre 0,7 y 1,4 dB | 0,91 dB | 0,59 dB | A sí; C no (por debajo: cuesta menos de lo previsto) |
+| R2 | -e 1: \|corrimiento mediano\| ≤ 50 Hz | +49 Hz [7, 145] | +22 Hz [8, 50] | sí (A en el límite) |
+| R3 | -e 2: corrimiento mediano > +40 Hz | +165 Hz [41, 390] | +88 Hz [41, 155] | sí |
+| R4 | -e 2: SD 4–11 kHz entre 1,0 y 2,0 dB | 1,79 dB | 1,04 dB | sí |
+| R5 | Piso A–C a -e 1 entre 2,4 y 2,9 dB | 2,63 dB | | sí |
+
+- **El sesgo de -e 2 en las muescas se repite en una segunda cabeza** (+165 y +88 Hz; B +87 Hz), y en A
+  pierde más muescas (33 % y 21 %; B 16 %).
+- **-e 1 sesga poco, pero no cero:** +49 y +22 Hz en A (B −4 Hz), entre 2 y 4 veces menos que -e 2.
+- **El costo de -e 1 es igual o menor en otra cabeza** (0,59–0,91 dB; B 1,01 dB).
+- **La regla sigue eligiendo -e 2:** el piso a -e 1 (2,63 dB) queda entre los otros dos, la elección no cambia con
+  ninguna de las tres definiciones de SD, y -e 2 queda bajo el piso también con los valores de A.
+
+## Decisión de producción (2026-10-07, posterior a los datos)
+
+**La regla registrada elige -e 2**: es el -e más grueso cuya diferencia con -e 0,5 no supera el ruido de capturar
+dos veces a la misma persona. Se reporta así.
+
+**Para producción se elige -e 1 -y 5** (`-x 0.5 -y 5 -e 1`). Es una decisión aparte, tomada después de ver los datos
+y declarada como tal, con criterios que la regla no medía:
+
+1. **Sesgo sistemático.** El ruido de captura corre las muescas en cualquier sentido (mediana −77 Hz, RIC
+   [−361, +258]); -e 2 las corre hacia arriba en las tres capturas medidas (+87, +165 y +88 Hz). Un error
+   sistemático no se compensa entre personas. -e 1 lo reduce entre 2 y 4 veces (−4, +49 y +22 Hz).
+2. **Banda alta.** En 12–16 kHz, -e 1 se aparta menos de -e 0,5 que -e 2 (B: 3,11 frente a 5,04 dB).
+3. **Margen.** El piso sale de una sola persona; -e 1 deja más distancia hasta él.
+4. **-y 5 y no -y 10:** con la misma oreja que -e 1 (1,02 dB y 10 % frente a -e 0,5 en B), converge en las 78
+   frecuencias con el NumCalc de 2022, que -e 1 -y 10 no hizo con B, y pide menos memoria (5,8 frente a
+   6,4 GB de pico).
+5. **Costo asumible:** unas 3–4 h y menos de 6 GB por oreja en este equipo, frente a ~0,7 h y 3 GB de -e 2.
+
+-e 1 -y 5 no se simuló con A: la recomendación se apoya en que tiene la misma oreja que -e 1 (medido en
+B) y en el comportamiento de -e 1 en A.
