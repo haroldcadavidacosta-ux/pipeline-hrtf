@@ -214,5 +214,7 @@ de pelo aplastado es ~1.1 % de escala), justo por encima de las cejas y de las o
 - **Concha poco profunda en todos** (0–9 mm contra ~10–15 mm reales): limitación de la
   fotogrametría con celular. Se resuelve en la captura, no aquí. El umbral del aviso
   (`PROFUNDIDAD_CONCHA_MIN`) es provisional.
-- Confirmar las unidades que espera Mesh2HRTF antes de exportar.
+- ~~Confirmar las unidades que espera Mesh2HRTF antes de exportar.~~ Resuelto: la exportación
+  declara `unit: mm` y `malla/exportacion.py` rechaza el proyecto si su `parameters.json` no
+  dice mm.
 - Los rangos del control de calidad salieron de solo 4 sujetos buenos.

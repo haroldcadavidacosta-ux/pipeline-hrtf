@@ -175,3 +175,10 @@ y declarada como tal, con criterios que la regla no medía:
 
 -e 1 -y 5 no se simuló con A: la recomendación se apoya en que tiene la misma oreja que -e 1 (medido en
 B) y en el comportamiento de -e 1 en A.
+
+## Corrección (2026-10-07, revisión de la metodología)
+
+En «Gradado de A1 a -e 0,5» dice que el resultado va de 52 656 a 53 018 caras en cinco órdenes. Repetido hoy con
+el código actual (`reordenada`, órdenes 1 a 5, misma entrada por SHA-256): el orden 1 da 52 590 caras (la malla usada,
+reproducible), el orden 2 también se cae, y los órdenes 3 a 5 dan 52 854, 52 878 y 52 858. El rango correcto es
+52 590 a 52 878 caras, en 4 de 5 órdenes. No cambia ningún resultado: la malla simulada es la del orden 1.

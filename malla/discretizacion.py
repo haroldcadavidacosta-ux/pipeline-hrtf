@@ -8,9 +8,12 @@ región cuya arista típica es h deja de estar bien discretizada por encima de
 Como arista típica se toma la mediana, sobre las caras de la región, de la arista más larga de
 cada cara. Se reporta por región: la oreja (esfera alrededor del canal) y el resto de la cabeza.
 
-Estado (2026-09-29): es la regla práctica de λ/6, no validada todavía en este proyecto. En el
-barrido de -e predice el mismo orden de las condiciones que la subida de la distorsión espectral,
-pero el codo medido depende de la ventana de ajuste; la corrida -e 1 -y 5 es la prueba pendiente.
+Estado (2026-10-07): es la regla práctica de λ/6, no validada en este proyecto. En el barrido de -e
+predice el mismo orden de las condiciones que la subida de la distorsión espectral, pero el codo
+medido depende de la ventana de ajuste. La corrida -e 1 -y 5 no la falsó: la mediana predice que
+afinar la cabeza no cambia la banda alta, y no la cambió; la estadística de cola (percentil 90)
+predecía una mejora que no apareció, así que se mantiene la mediana
+(datos/experimentos/barrido_e/fase3/y5/informe_y5.md).
 """
 from pathlib import Path
 

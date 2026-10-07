@@ -123,9 +123,10 @@ def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subp
     sanas, de forma caótica: depende de detalles internos, no de la geometría. A1 (-e 0.5)
     se caía cortada a -115 mm y no a -110, ni sin cortar. Si se cae (o termina sin remallar),
     se reintenta con la MISMA malla escrita en otro orden (reordenada): con A1 funcionó en
-    5 de 5 órdenes. Antes se movía la malla 0.0001 mm, pero con A1 eso dejaba al programa
-    sin remallar en 15 de 15 intentos. El resultado depende un poco del orden (52 656 a 53 018
-    caras en esos 5), así que el reintento queda anotado en el informe.
+    4 de los órdenes 1 a 5 (el 2 también se cae; repetido el 2026-10-07). Antes se movía la malla
+    0.0001 mm, pero con A1 eso dejaba al programa sin remallar en 15 de 15 intentos. El
+    resultado depende un poco del orden (52 590 a 52 878 caras en esos 4), así que el reintento
+    queda anotado en el informe.
     Devuelve el último resultado y cuántos reintentos hicieron falta."""
     def correr(entrada: str) -> subprocess.CompletedProcess:
         # nombres relativos a la carpeta: el programa no abre rutas con tildes ("Prueba á")

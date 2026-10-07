@@ -100,7 +100,7 @@ def principal() -> None:
          "piso_sd_4_11_db": piso_sd, "piso_muescas_perdidas": piso_muescas,
          "sd_bandas_db": bandas, "notch": {x: notch[x] for x in notch if x != "corrimientos_hz"},
          "candidatas_contra_ref_B": cand, "eleccion": eleccion,
-         "caracter": "orientativa (par a -e 2)" if e != "0.5" else "definitiva (par a -e 0,5)"}
+         "caracter": f"orientativa (par a -e {e.replace('.', ',')})" if e != "0.5" else "definitiva (par a -e 0,5)"}
     (SALIDA / f"analisis_e{e}.json").write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
     escribir_informe(r)
     print(json.dumps({x: r[x] for x in ("piso_sd_4_11_db", "piso_muescas_perdidas", "eleccion", "caracter")},
