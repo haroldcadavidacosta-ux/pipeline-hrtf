@@ -1,4 +1,4 @@
-"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir, limpiar y gradar.
+"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir, limpiar, gradar y exportar.
 
 1. Malla y puntos. Se carga el escaneo y se marcan con DOBLE CLIC siete puntos: la
    entrada de los dos canales auditivos y la punta de la nariz (definen la alineación,
@@ -12,11 +12,13 @@
    el mismo visor.
 4. Gradado: gradar_malla.py en un proceso aparte, igual que la limpieza. Al arrancar,
    la app comprueba que el binario del gradado (grading/) existe y arranca.
+5. Exportación a Mesh2HRTF: exportar_malla.py en un proceso aparte (usa Blender en
+   segundo plano). Al arrancar, la app comprueba que encuentra Blender.
 
 Ejecutar:  .venv/Scripts/python.exe app.py   ->  http://localhost:8080
 Empaquetada (pipeline_hrtf.spec), la app se relanza a sí misma para cada tarea:
-  pipeline_hrtf.exe limpiar ...   /   pipeline_hrtf.exe gradar ...   (mismos argumentos
-  que limpiar_malla.py y gradar_malla.py; p. ej. pipeline_hrtf.exe gradar --diagnostico)
+  pipeline_hrtf.exe limpiar | gradar | exportar ...   (mismos argumentos que
+  limpiar_malla.py, gradar_malla.py y exportar_malla.py; p. ej. pipeline_hrtf.exe gradar --diagnostico)
 """
 import json
 import multiprocessing
@@ -37,15 +39,17 @@ from scipy.spatial import cKDTree
 import config
 from malla.alineacion import aplicar_transformacion, matriz_alineacion, residuo_alineacion
 from malla.gradado import MALLA_MM
+from malla.exportacion import comprobar_blender
 from malla.gradado import SALIDAS as SALIDAS_GRADADO
 from malla.gradado import comprobar_binario
 from malla.oreja import PUNTOS_LARGO
 
 RAIZ = Path(__file__).resolve().parent
 # Tareas largas que corren en un proceso aparte: subcomando -> script
-TAREAS = {"limpiar": "limpiar_malla.py", "gradar": "gradar_malla.py"}
-# Resultado de comprobar el binario del gradado al arrancar: (bien, mensaje)
-ESTADO_BINARIO: tuple[bool, str] = (False, "sin comprobar")
+TAREAS = {"limpiar": "limpiar_malla.py", "gradar": "gradar_malla.py", "exportar": "exportar_malla.py"}
+# Lo que se comprueba al arrancar: (bien, mensaje)
+ESTADO_BINARIO: tuple[bool, str] = (False, "sin comprobar")   # binario del gradado
+ESTADO_BLENDER: tuple[bool, str] = (False, "sin comprobar")   # Blender, para exportar
 RUTA_POR_DEFECTO = Path(config.RUTA_DATOS) / "entrada" / "3Dmesh_orig.stl"
 EXTENSIONES = {".obj", ".ply", ".stl"}
 RESIDUO_MAX = 1e-6
@@ -213,6 +217,7 @@ class AppPipeline:
         self.guardado = False                   # el JSON en disco corresponde a los puntos actuales
         self.limpiando = False
         self.gradando = False
+        self.exportando = False
         self.salida: Path | None = None
         self.informe: dict | None = None
         self.informe_gradado: dict | None = None
@@ -301,6 +306,21 @@ class AppPipeline:
             self.estado_gradado = ui.label("")
         self.registro_gradado = ui.log(max_lines=100).classes("w-full h-32")
         self.resultado_gradado = ui.column()
+
+        ui.label("5. Exportación a Mesh2HRTF").classes("text-xl mt-4")
+        bien, mensaje = ESTADO_BLENDER
+        ui.label(("Blender encontrado: " if bien else "ERROR, la exportación no va a funcionar: ")
+                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
+        ui.label("Necesita el gradado aprobado. Deja "
+                 f"{' y '.join(config.PROYECTOS_MESH2HRTF.values())} (listos para NumCalc) en la "
+                 "carpeta de resultados. Un proyecto que ya tenga resultados de NumCalc no se sobrescribe.")
+        with ui.row().classes("items-center"):
+            self.boton_exportar = ui.button("Exportar proyectos (izquierda y derecha)", on_click=self.exportar)
+            self.spinner_exportacion = ui.spinner(size="lg")
+            self.spinner_exportacion.set_visibility(False)
+            self.estado_exportacion = ui.label("")
+        self.registro_exportacion = ui.log(max_lines=100).classes("w-full h-32")
+        self.resultado_exportacion = ui.column()
         ui.timer(0.25, self.seguir_camara)
         self.refrescar()
 
@@ -503,19 +523,23 @@ class AppPipeline:
         self.nota_ejes.set_text("(ejes anatómicos)" if self.T is not None else
                                 "(ejes supuestos del archivo hasta marcar los 3 primeros puntos)")
         completo = n == len(LANDMARKS) and self.residuo <= RESIDUO_MAX
-        ocupado = self.limpiando or self.gradando
+        ocupado = self.tarea_en_curso() is not None
         self.boton_guardar.set_enabled(completo and not ocupado)
         self.boton_limpiar.set_enabled(self.guardado and not ocupado)
         self.boton_cargar.set_enabled(not ocupado)
         se_puede_gradar = (self.salida is not None and (self.salida / MALLA_MM).exists()
                            and self.informe["control_calidad"]["aprobado"] and ESTADO_BINARIO[0])
         self.boton_gradar.set_enabled(se_puede_gradar and not ocupado)
+        se_puede_exportar = (self.informe_gradado is not None and self.informe_gradado["aprobado"]
+                             and ESTADO_BLENDER[0])
+        self.boton_exportar.set_enabled(se_puede_exportar and not ocupado)
 
     def invalidar(self) -> None:
         """Los puntos cambiaron: lo guardado y la limpieza ya no les corresponden."""
         self.guardado = False
         self.salida, self.informe, self.informe_gradado = None, None, None
         self.resultado.clear()
+        self.limpiar_exportacion()
         self.resultado_gradado.clear()
         self.registro_gradado.clear()
         self.estado_gradado.set_text("")
@@ -524,11 +548,24 @@ class AppPipeline:
         self.cache_visor.clear()
         self.refrescar_selector()
 
+    def limpiar_exportacion(self) -> None:
+        """La exportación que se ve ya no corresponde (otros puntos, otra limpieza u otro gradado)."""
+        self.resultado_exportacion.clear()
+        self.registro_exportacion.clear()
+        self.estado_exportacion.set_text("")
+
+    def tarea_en_curso(self) -> str | None:
+        for en_curso, nombre in ((self.limpiando, "la limpieza"), (self.gradando, "el gradado"),
+                                 (self.exportando, "la exportación")):
+            if en_curso:
+                return nombre
+        return None
+
     def puede_editar(self) -> bool:
-        if self.limpiando or self.gradando:
-            ui.notify(f"Espera a que termine {'la limpieza' if self.limpiando else 'el gradado'}.",
-                      type="warning")
-        return not (self.limpiando or self.gradando)
+        tarea = self.tarea_en_curso()
+        if tarea:
+            ui.notify(f"Espera a que termine {tarea}.", type="warning")
+        return tarea is None
 
     # --- manejadores: puntos --------------------------------------------------
     def al_doble_clic(self, e: events.SceneClickEventArguments) -> None:
@@ -734,7 +771,9 @@ class AppPipeline:
 
     async def gradar(self) -> None:
         self.gradando = True
+        self.informe_gradado = None
         self.resultado_gradado.clear()
+        self.limpiar_exportacion()
         self.refrescar()
         self.spinner_gradado.set_visibility(True)
         self.estado_gradado.set_text("Gradando los dos lados...")
@@ -769,6 +808,38 @@ class AppPipeline:
         self.refrescar()
         if informe["aprobado"]:
             await self.mostrar_salida(SALIDAS_GRADADO["left"], "Graduada izquierda")
+
+    async def exportar(self) -> None:
+        self.exportando = True
+        self.limpiar_exportacion()
+        self.refrescar()
+        self.spinner_exportacion.set_visibility(True)
+        self.estado_exportacion.set_text("Exportando con Blender...")
+        codigo = await self.correr_tarea("exportar", [str(self.salida)], self.registro_exportacion)
+        self.exportando = False
+        self.spinner_exportacion.set_visibility(False)
+        ruta_informe = self.salida / "informe_exportacion.json"
+        informe = json.loads(ruta_informe.read_text(encoding="utf-8")) if ruta_informe.exists() else {}
+        if codigo not in (0, 1) or "aprobado" not in informe:
+            self.estado_exportacion.set_text("La exportación falló: ver el registro.")
+            self.refrescar()
+            return
+        self.estado_exportacion.set_text(f"Terminada. Proyectos en {self.salida}")
+        with self.resultado_exportacion:
+            if informe["aprobado"]:
+                ui.label("EXPORTACIÓN OK").classes("text-2xl font-bold text-green-700")
+            else:
+                ui.label("EXPORTACIÓN FALLIDA").classes("text-2xl font-bold text-red-700")
+            for falla in informe["fallas"]:
+                ui.label(f"✖ {falla}").classes("text-red-700")
+            for aviso in informe["avisos"]:
+                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+            for r in informe["lados"].values():
+                if "fuente_distancia_canal_mm" in r:
+                    ui.label(f"{r['proyecto']}: {r['nodos']:,} nodos, {r['elementos']:,} elementos, "
+                             f"fuente ({r['sourceType']}) a {r['fuente_distancia_canal_mm']} mm del canal "
+                             f"marcado, {r['frecuencias']} frecuencias")
+        self.refrescar()
 
     def mostrar_resultado(self) -> None:
         inf, cc = self.informe, self.informe["control_calidad"]
@@ -817,12 +888,17 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     if len(sys.argv) > 1 and sys.argv[1] in TAREAS:
         # la app empaquetada se relanza a sí misma para cada tarea (ver comando_tarea)
+        import exportar_malla
         import gradar_malla
         import limpiar_malla
-        {"limpiar": limpiar_malla.principal, "gradar": gradar_malla.principal}[sys.argv[1]](sys.argv[2:])
+        {"limpiar": limpiar_malla.principal, "gradar": gradar_malla.principal,
+         "exportar": exportar_malla.principal}[sys.argv[1]](sys.argv[2:])
     else:
         ESTADO_BINARIO = comprobar_binario()
         print(("Gradado: " if ESTADO_BINARIO[0] else "AVISO, el gradado no va a funcionar: ")
               + ESTADO_BINARIO[1])
+        ESTADO_BLENDER = comprobar_blender()
+        print(("Exportación: " if ESTADO_BLENDER[0] else "AVISO, la exportación no va a funcionar: ")
+              + ESTADO_BLENDER[1])
         ui.run(root=principal, title="Pipeline HRTF", port=8080, reload=False,
                show=True, show_welcome_message=False)

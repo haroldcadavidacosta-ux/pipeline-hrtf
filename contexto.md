@@ -102,7 +102,12 @@ En la terminal de VS Code (`Ctrl+ñ`), dentro de `pipeline_hrtf`:
 ```
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install "C:\Users\TU_USUARIO\Documents\PROYECTO DE GRADO\Mesh2HRTF\Mesh2HRTF-1.3.0"
 ```
+
+La última línea instala el paquete de Python de Mesh2HRTF (lo que convierte la salida de
+NumCalc en SOFA). La versión 1.3.0 **no está en PyPI**, así que se instala desde tu
+carpeta de Mesh2HRTF (la que tiene `pyproject.toml`); cambia la ruta por la tuya.
 
 Tarda unos minutos. **Usa siempre la ruta explícita `.venv\Scripts\python.exe`**, así da
 igual si la terminal tiene el entorno activado o no. La carpeta `.venv` no se sube al
@@ -123,18 +128,27 @@ correr el `pip install -r requirements.txt`.
 
 `config.py` tiene rutas de ejemplo y se comparte. Tus rutas reales van en un archivo
 **`config_local.py`** que creas tú en la raíz del proyecto. **No se sube al repositorio**:
-el `.gitignore` lo excluye y cada máquina tiene el suyo. Es opcional: los datos van por
-defecto a `datos\` dentro del proyecto, y el programa del gradado viene con el
-repositorio (`grading\`), así que no hay que configurarlo. Ejemplo:
+el `.gitignore` lo excluye y cada máquina tiene el suyo. **Normalmente no hace falta**:
+- los datos van por defecto a `datos\` dentro del proyecto;
+- el programa del gradado (`grading\`) y el exportador de Mesh2HRTF (`mesh2hrtf_1.3.0\`)
+  vienen con el repositorio;
+- Blender se busca solo en `C:\Program Files\Blender Foundation\` (la versión más alta).
+
+Solo si Blender está en otro sitio:
 
 ```python
-BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
-MESH2HRTF_PATH = r"C:\Users\TU_USUARIO\Documents\PROYECTO DE GRADO\Mesh2HRTF\Mesh2HRTF-1.3.0\mesh2hrtf"
+BLENDER_EXE = r"D:\Programas\Blender\blender.exe"
 ```
 
-Para comprobar que el gradado funciona en tu máquina:
-`.venv\Scripts\python.exe gradar_malla.py --diagnostico` (la app también lo comprueba al
-arrancar y lo muestra en el paso 4).
+**Blender sí hay que instalarlo** (gratis, blender.org): el exportador de Mesh2HRTF es un
+complemento de Blender. No hace falta instalar el complemento: la app lo carga sola.
+
+Para comprobar que todo funciona en tu máquina (la app también lo comprueba al arrancar
+y lo muestra en los pasos 4 y 5):
+```
+.venv\Scripts\python.exe gradar_malla.py --diagnostico
+.venv\Scripts\python.exe exportar_malla.py --diagnostico
+```
 
 **No pongas tus rutas en `config.py`**: si las subes, le cambias las rutas al otro en su
 próximo `pull`.
@@ -170,6 +184,8 @@ Flujo dentro de la app:
 5. Revisa el veredicto y las mallas de cada paso con los botones del visor.
 6. **Gradar malla**: con la limpieza aprobada y alguna medida dada, gradúa los dos lados
    en unos segundos y deja las mallas listas para Mesh2HRTF.
+7. **Exportar proyectos**: con el gradado aprobado, Blender (en segundo plano) exporta
+   `myHRTF_project_L` y `myHRTF_project_R`, listos para NumCalc.
 
 ---
 
@@ -190,17 +206,21 @@ PROYECTO DE GRADO\
     ├── config_local.py              TUS rutas (no se sube)
     ├── contexto.md                  este archivo
     ├── guia_arranque_pipeline_hrtf.md   guía original de arranque
-    ├── app.py                       la app: puntos, medidas, limpieza, gradado, visor
+    ├── app.py                       la app: puntos, medidas, limpieza, gradado, exportación, visor
     ├── limpiar_malla.py             la limpieza desde la terminal (la app la usa por debajo)
     ├── gradar_malla.py              el gradado desde la terminal (ídem); --diagnostico
+    ├── exportar_malla.py            la exportación a Mesh2HRTF desde la terminal (ídem); --diagnostico
     ├── vista_previa.py              renders de una malla desde 6 ángulos (PNG)
     ├── pipeline_hrtf.spec           empaquetado con PyInstaller (ver sección 3b)
     ├── requirements-empaquetado.txt solo para empaquetar
     ├── grading\                     hrtf_mesh_grading.exe + sus DLL (sí se sube; ver LEEME.md)
+    ├── mesh2hrtf_1.3.0\             el exportador de Mesh2HRTF para Blender (sí se sube; ver LEEME.md)
     ├── malla\                       matemática de la malla, sin interfaz (persona A)
     │   ├── alineacion.py            matriz de alineación por 3 puntos
     │   ├── limpieza.py              la limpieza completa y la escala
     │   ├── gradado.py               el gradado (llama a grading\hrtf_mesh_grading.exe)
+    │   ├── exportacion.py           la exportación (lanza Blender y revisa los proyectos)
+    │   ├── blender_exportar.py      lo que corre DENTRO de Blender: materiales, fuente, exportar
     │   ├── oreja.py                 métricas de la oreja y largo hélix–lóbulo
     │   └── LIMPIEZA.md              por qué cada paso es como es (LEER antes de tocar)
     ├── metricas\                    ITD, ILD, distorsión espectral (persona B, por empezar)
@@ -225,9 +245,20 @@ En `datos\salidas\<nombre de la carpeta del escaneo>\`:
 | `3Dmesh_graded_left.ply` | graduada: elementos finos en la oreja izquierda |
 | `3Dmesh_graded_right.ply` | graduada: elementos finos en la oreja derecha |
 | `informe_gradado.json` | caras de cada lado, canales estimados por el programa, veredicto |
+| `myHRTF_project_L\` | proyecto de Mesh2HRTF con la fuente en la oreja izquierda, listo para NumCalc |
+| `myHRTF_project_R\` | ídem, oreja derecha |
+| `informe_exportacion.json` | nodos y elementos de cada proyecto, cara de la fuente y su distancia al canal marcado, veredicto |
 
-Cada limpieza o gradado **sobrescribe** lo anterior de esa carpeta. Los parámetros del
-gradado están en `config.py` (`GRADING_X_MM`, `GRADING_Y_MM`).
+Cada limpieza o gradado **sobrescribe** lo anterior de esa carpeta. La exportación
+también reemplaza los proyectos, **salvo que alguno ya tenga resultados de NumCalc**: en
+ese caso no toca ninguno (hay que moverlo o renombrarlo a mano). Los parámetros están en
+`config.py`: gradado (`GRADING_X_MM`, `GRADING_Y_MM`) y exportación
+(`EXPORTACION_MESH2HRTF`: frecuencias, mallas de evaluación, método, etc.).
+
+La fuente de cada proyecto es **una sola cara**: la más cercana a la entrada del canal
+marcado con la app, (0, ±AID/2, 0) mm. El sistema de coordenadas del pipeline es el de
+Mesh2HRTF (nariz +x, oreja izquierda +y, arriba +z, origen entre los canales) y las
+mallas van en mm (`unit='mm'`).
 
 ### 3b. App empaquetada (sin Python)
 
@@ -237,8 +268,9 @@ gradado están en `config.py` (`GRADING_X_MM`, `GRADING_Y_MM`).
 ```
 
 Deja `dist\pipeline_hrtf\` (~470 MB): se reparte la carpeta entera y se abre
-`pipeline_hrtf.exe`. Lleva dentro el programa del gradado; los datos van a `datos\` al
-lado del `.exe`. `dist\` y `build\` no se suben.
+`pipeline_hrtf.exe`. Lleva dentro el programa del gradado y el exportador de Mesh2HRTF;
+**Blender no va dentro** (hay que tenerlo instalado). Los datos van a `datos\` al lado
+del `.exe`. `dist\` y `build\` no se suben.
 
 **Ojo con las unidades en otros programas**: `malla_final_mm.ply` está en mm, pero
 **Blender supone metros** y mostrará "240 m" para una cabeza de 240 mm. En Blender, pon

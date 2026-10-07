@@ -11,8 +11,10 @@ Resultado: dist\\pipeline_hrtf\\ (se reparte la carpeta entera; se abre pipeline
   config_local.py al lado del .exe para cambiar rutas.
 - grading\\ (binario del gradado y sus DLL) queda en _internal\\grading y la app lo
   encuentra sola (config.CARPETA_RECURSOS).
-- La limpieza y el gradado corren en procesos aparte: el .exe se relanza a sí mismo con
-  el subcomando "limpiar" o "gradar" (ver app.py).
+- mesh2hrtf_1.3.0\ (exportador de Mesh2HRTF) y malla\blender_exportar.py quedan en
+  _internal\. Blender NO va dentro: hay que tenerlo instalado (se busca solo).
+- La limpieza, el gradado y la exportación corren en procesos aparte: el .exe se relanza
+  a sí mismo con el subcomando "limpiar", "gradar" o "exportar" (ver app.py).
 """
 import os
 from pathlib import Path
@@ -23,10 +25,13 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 datas = [
     (str(Path(nicegui.__file__).parent), "nicegui"),     # lo mismo que hace nicegui-pack
     (os.path.join(SPECPATH, "grading"), "grading"),       # binario del gradado + DLL, sin tocar
+    (os.path.join(SPECPATH, "mesh2hrtf_1.3.0"), "mesh2hrtf_1.3.0"),   # exportador de Mesh2HRTF
+    # lo ejecuta el Python de Blender, no el de la app: va como archivo suelto
+    (os.path.join(SPECPATH, "malla", "blender_exportar.py"), "malla"),
 ]
 datas += collect_data_files("trimesh")
 binaries = []
-hiddenimports = ["limpiar_malla", "gradar_malla"]
+hiddenimports = ["limpiar_malla", "gradar_malla", "exportar_malla"]
 d, b, h = collect_all("pymeshlab")                         # sus plugins y DLL de Qt/MeshLab
 datas += d
 binaries += b

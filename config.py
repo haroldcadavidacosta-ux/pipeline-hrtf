@@ -19,10 +19,12 @@ else:
 
 # --- Rutas (sobreescribir en config_local.py) -----------------------------
 RUTA_DATOS = str(CARPETA_APP / "datos")
-BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
-MESH2HRTF_PATH = r"C:\ruta\de\ejemplo\Mesh2HRTF-1.3.0\mesh2hrtf"
-# Viene con la app (carpeta grading/): no hace falta configurarlo
+# None = se busca solo en C:\Program Files\Blender Foundation (la versión más alta).
+# Solo hace falta ponerlo si Blender está instalado en otro sitio.
+BLENDER_EXE = None
+# Vienen con la app (carpetas grading/ y mesh2hrtf_1.3.0/): no hace falta configurarlos
 GRADING_EXE = str(CARPETA_RECURSOS / "grading" / "hrtf_mesh_grading.exe")
+MESH2HRTF_PATH = str(CARPETA_RECURSOS / "mesh2hrtf_1.3.0" / "mesh2hrtf")
 
 # --- Gradado (hrtf_mesh_grading) --------------------------------------------
 # -e 1 -y 5: elegido para producción en el barrido de -e (fase 4, 2026-10-07; ver
@@ -32,6 +34,25 @@ GRADING_EXE = str(CARPETA_RECURSOS / "grading" / "hrtf_mesh_grading.exe")
 GRADING_X_MM = 0.5                # arista mínima (en la oreja)
 GRADING_E_MM = 1.0                # error geométrico máximo (-e); antes no se pasaba (el binario usa 0.5)
 GRADING_Y_MM = 5.0                # arista máxima (lejos de la oreja); antes 10
+
+# --- Exportación a Mesh2HRTF (operador mesh2input.inp de Blender) ------------
+PROYECTOS_MESH2HRTF = {"left": "myHRTF_project_L", "right": "myHRTF_project_R"}
+EXPORTACION_MESH2HRTF = {
+    "minFrequency": 0,
+    "maxFrequency": 24000,
+    "frequencyVectorType": "Step size",
+    "frequencyVectorValue": 150,
+    "evaluationGrids": "Default; ARI",
+    "materialSearchPaths": "None",
+    "pictures": False,
+    "reference": True,
+    "computeHRIRs": True,
+    "method": "ML-FMM BEM",
+    "unit": "mm",                 # las mallas graduadas están en mm
+    "speedOfSound": "343",
+    "densityOfMedium": "1.1839",
+}
+DISTANCIA_CANAL_MAX_MM = 2.0      # la cara de la fuente debe quedar así de cerca del canal marcado
 
 # --- Geometría ------------------------------------------------------------
 CORTE_CUELLO_MM = -115.0          # respecto del eje interaural
