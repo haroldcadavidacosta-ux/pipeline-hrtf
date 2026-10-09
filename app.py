@@ -1,4 +1,4 @@
-"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir, limpiar, gradar y exportar.
+"""App del pipeline HRTF (NiceGUI): marcar puntos, alinear, medir, limpiar, gradar, exportar y simular.
 
 1. Malla y puntos. Se carga el escaneo y se marcan con DOBLE CLIC siete puntos: la
    entrada de los dos canales auditivos y la punta de la nariz (definen la alineación,
@@ -14,11 +14,15 @@
    la app comprueba que el binario del gradado (grading/) existe y arranca.
 5. Exportación a Mesh2HRTF: exportar_malla.py en un proceso aparte (usa Blender en
    segundo plano). Al arrancar, la app comprueba que encuentra Blender.
+6. Simulación y HRTF: simular_malla.py en un proceso aparte (NumCalc viene con la app, en
+   numcalc/). Tarda horas; trabaja sobre una carpeta de resultados que se puede elegir, así
+   que una simulación cortada se retoma sin repetir los pasos anteriores.
 
 Ejecutar:  .venv/Scripts/python.exe app.py   ->  http://localhost:8080
 Empaquetada (pipeline_hrtf.spec), la app se relanza a sí misma para cada tarea:
-  pipeline_hrtf.exe limpiar | gradar | exportar ...   (mismos argumentos que
-  limpiar_malla.py, gradar_malla.py y exportar_malla.py; p. ej. pipeline_hrtf.exe gradar --diagnostico)
+  pipeline_hrtf.exe limpiar | gradar | exportar | simular | hesuvi ...   (mismos argumentos que
+  limpiar_malla.py, gradar_malla.py, exportar_malla.py, simular_malla.py y exportar_hesuvi.py; p. ej.
+  pipeline_hrtf.exe simular --diagnostico)
 """
 import json
 import multiprocessing
@@ -43,13 +47,16 @@ from malla.exportacion import comprobar_blender
 from malla.gradado import SALIDAS as SALIDAS_GRADADO
 from malla.gradado import comprobar_binario
 from malla.oreja import PUNTOS_LARGO
+from malla.simulacion import CARPETA_SOFA, comprobar_numcalc
 
 RAIZ = Path(__file__).resolve().parent
 # Tareas largas que corren en un proceso aparte: subcomando -> script
-TAREAS = {"limpiar": "limpiar_malla.py", "gradar": "gradar_malla.py", "exportar": "exportar_malla.py"}
+TAREAS = {"limpiar": "limpiar_malla.py", "gradar": "gradar_malla.py", "exportar": "exportar_malla.py",
+          "simular": "simular_malla.py", "hesuvi": "exportar_hesuvi.py"}
 # Lo que se comprueba al arrancar: (bien, mensaje)
 ESTADO_BINARIO: tuple[bool, str] = (False, "sin comprobar")   # binario del gradado
 ESTADO_BLENDER: tuple[bool, str] = (False, "sin comprobar")   # Blender, para exportar
+ESTADO_NUMCALC: tuple[bool, str] = (False, "sin comprobar")   # NumCalc, para simular
 RUTA_POR_DEFECTO = Path(config.RUTA_DATOS) / "entrada" / "3Dmesh_orig.stl"
 EXTENSIONES = {".obj", ".ply", ".stl"}
 RESIDUO_MAX = 1e-6
@@ -218,6 +225,7 @@ class AppPipeline:
         self.limpiando = False
         self.gradando = False
         self.exportando = False
+        self.simulando = False
         self.salida: Path | None = None
         self.informe: dict | None = None
         self.informe_gradado: dict | None = None
@@ -234,7 +242,7 @@ class AppPipeline:
 
     # --- interfaz -----------------------------------------------------------
     def construir_interfaz(self) -> None:
-        ui.label("Pipeline HRTF: alineación, medidas, limpieza y gradado").classes("text-2xl")
+        ui.label("Pipeline HRTF: del escaneo a la HRTF").classes("text-2xl")
 
         ui.label("1. Malla y puntos").classes("text-xl mt-4")
         with ui.row().classes("w-full items-end"):
@@ -321,6 +329,25 @@ class AppPipeline:
             self.estado_exportacion = ui.label("")
         self.registro_exportacion = ui.log(max_lines=100).classes("w-full h-32")
         self.resultado_exportacion = ui.column()
+
+        ui.label("6. Simulación con NumCalc y HRTF").classes("text-xl mt-4")
+        bien, mensaje = ESTADO_NUMCALC
+        ui.label(("NumCalc listo: " if bien else "ERROR, la simulación no va a funcionar: ")
+                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
+        ui.label("Necesita la exportación aprobada en la carpeta de resultados. Simula las dos orejas "
+                 "(tarda horas), verifica que cada frecuencia convergió y deja la HRTF de las dos "
+                 f"orejas en {CARPETA_SOFA}. Se puede cortar y volver a lanzar: lo ya simulado se "
+                 "conserva. Para retomar otra carpeta, escribe su ruta.")
+        with ui.row().classes("w-full items-end"):
+            self.entrada_simulacion = ui.input("Carpeta de resultados (con los proyectos exportados)",
+                                               on_change=lambda _: self.refrescar()).classes("flex-grow")
+        with ui.row().classes("items-center"):
+            self.boton_simular = ui.button("Simular y armar la HRTF", on_click=self.simular)
+            self.spinner_simulacion = ui.spinner(size="lg")
+            self.spinner_simulacion.set_visibility(False)
+            self.estado_simulacion = ui.label("")
+        self.registro_simulacion = ui.log(max_lines=500).classes("w-full h-48")
+        self.resultado_simulacion = ui.column()
         ui.timer(0.25, self.seguir_camara)
         self.refrescar()
 
@@ -533,6 +560,23 @@ class AppPipeline:
         se_puede_exportar = (self.informe_gradado is not None and self.informe_gradado["aprobado"]
                              and ESTADO_BLENDER[0])
         self.boton_exportar.set_enabled(se_puede_exportar and not ocupado)
+        self.boton_simular.set_enabled(ESTADO_NUMCALC[0] and self.exportacion_aprobada() and not ocupado)
+        self.entrada_simulacion.set_enabled(not ocupado)
+
+    def carpeta_simulacion(self) -> Path | None:
+        texto = (self.entrada_simulacion.value or "").strip().strip('"')
+        return Path(texto) if texto else None
+
+    def exportacion_aprobada(self) -> bool:
+        """Se mira en disco: la carpeta puede ser de una sesión anterior."""
+        carpeta = self.carpeta_simulacion()
+        if carpeta is None or not (carpeta / "informe_exportacion.json").is_file():
+            return False
+        try:
+            informe = json.loads((carpeta / "informe_exportacion.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return bool(informe.get("aprobado"))
 
     def invalidar(self) -> None:
         """Los puntos cambiaron: lo guardado y la limpieza ya no les corresponden."""
@@ -556,7 +600,7 @@ class AppPipeline:
 
     def tarea_en_curso(self) -> str | None:
         for en_curso, nombre in ((self.limpiando, "la limpieza"), (self.gradando, "el gradado"),
-                                 (self.exportando, "la exportación")):
+                                 (self.exportando, "la exportación"), (self.simulando, "la simulación")):
             if en_curso:
                 return nombre
         return None
@@ -825,6 +869,8 @@ class AppPipeline:
             self.refrescar()
             return
         self.estado_exportacion.set_text(f"Terminada. Proyectos en {self.salida}")
+        if informe["aprobado"]:
+            self.entrada_simulacion.set_value(str(self.salida))
         with self.resultado_exportacion:
             if informe["aprobado"]:
                 ui.label("EXPORTACIÓN OK").classes("text-2xl font-bold text-green-700")
@@ -839,6 +885,49 @@ class AppPipeline:
                     ui.label(f"{r['proyecto']}: {r['nodos']:,} nodos, {r['elementos']:,} elementos, "
                              f"fuente ({r['sourceType']}) a {r['fuente_distancia_canal_mm']} mm del canal "
                              f"marcado, {r['frecuencias']} frecuencias")
+        self.refrescar()
+
+    async def simular(self) -> None:
+        carpeta = self.carpeta_simulacion()
+        self.simulando = True
+        self.resultado_simulacion.clear()
+        self.refrescar()
+        self.spinner_simulacion.set_visibility(True)
+        self.estado_simulacion.set_text("Simulando con NumCalc (tarda horas)...")
+        codigo = await self.correr_tarea("simular", [str(carpeta)], self.registro_simulacion)
+        self.simulando = False
+        self.spinner_simulacion.set_visibility(False)
+        ruta_informe = carpeta / "informe_simulacion.json"
+        informe = json.loads(ruta_informe.read_text(encoding="utf-8")) if ruta_informe.exists() else {}
+        if codigo not in (0, 1) or "aprobado" not in informe:
+            self.estado_simulacion.set_text("La simulación falló o se cortó: ver el registro. "
+                                            "Se puede volver a lanzar.")
+            self.refrescar()
+            return
+        self.estado_simulacion.set_text(f"Terminada. Resultados en {carpeta}")
+        with self.resultado_simulacion:
+            if informe["aprobado"]:
+                ui.label("HRTF LISTA").classes("text-2xl font-bold text-green-700")
+                ui.label(f"Archivos en {carpeta / informe['sofa']['carpeta']}: "
+                         + ", ".join(informe["sofa"]["sha256"]))
+                if informe.get("dtf"):
+                    ui.label("Para escuchar con programas que cargan SOFA (timbre neutro): "
+                             + ", ".join(informe["dtf"]) + ". Para métricas, usar los SOFA sin ecualizar")
+                if informe.get("hesuvi", {}).get("archivos"):
+                    ui.label("Para escuchar en Windows con HeSuVi (7.1 virtual con audífonos): "
+                             + ", ".join(informe["hesuvi"]["archivos"])
+                             + ". Recomendado: HeSuVi_DTF_48000.wav")
+            else:
+                ui.label("SIMULACIÓN FALLIDA").classes("text-2xl font-bold text-red-700")
+            for falla in informe["fallas"]:
+                ui.label(f"✖ {falla}").classes("text-red-700")
+            for aviso in informe["avisos"]:
+                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+            for r in informe["lados"].values():
+                c = r["convergencia"]
+                ui.label(f"{r['proyecto']}: {c['convergieron']}/{c['pasos']} frecuencias convergieron "
+                         f"({r['de_hz']:.0f}–{r['a_hz']:.0f} Hz), {r['horas_suma_por_frecuencia']} h de cálculo"
+                         + (f", RAM pico {r['pico_ram_suma_numcalc_gb']} GB" if "pico_ram_suma_numcalc_gb" in r else ""))
         self.refrescar()
 
     def mostrar_resultado(self) -> None:
@@ -891,8 +980,11 @@ if __name__ == "__main__":
         import exportar_malla
         import gradar_malla
         import limpiar_malla
+        import exportar_hesuvi
+        import simular_malla
         {"limpiar": limpiar_malla.principal, "gradar": gradar_malla.principal,
-         "exportar": exportar_malla.principal}[sys.argv[1]](sys.argv[2:])
+         "exportar": exportar_malla.principal, "simular": simular_malla.principal,
+         "hesuvi": exportar_hesuvi.principal}[sys.argv[1]](sys.argv[2:])
     else:
         ESTADO_BINARIO = comprobar_binario()
         print(("Gradado: " if ESTADO_BINARIO[0] else "AVISO, el gradado no va a funcionar: ")
@@ -900,5 +992,8 @@ if __name__ == "__main__":
         ESTADO_BLENDER = comprobar_blender()
         print(("Exportación: " if ESTADO_BLENDER[0] else "AVISO, la exportación no va a funcionar: ")
               + ESTADO_BLENDER[1])
+        ESTADO_NUMCALC = comprobar_numcalc()
+        print(("Simulación: " if ESTADO_NUMCALC[0] else "AVISO, la simulación no va a funcionar: ")
+              + ESTADO_NUMCALC[1])
         ui.run(root=principal, title="Pipeline HRTF", port=8080, reload=False,
                show=True, show_welcome_message=False)

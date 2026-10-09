@@ -9,8 +9,8 @@
 ## 1. Qué hemos hecho hasta ahora
 
 El objetivo es sacar la HRTF de una persona a partir de un escaneo 3D de su cabeza hecho
-con el celular (KIRI Engine). Las dos primeras etapas ya funcionan y están juntas en una
-sola app, `app.py`:
+con el celular (KIRI Engine). Todas las etapas, del escaneo a la HRTF en SOFA, funcionan y
+están juntas en una sola app, `app.py`:
 
 1. **Marcar puntos y alinear.** Se carga el escaneo y se marcan con doble clic 7 puntos:
    la entrada de los dos canales auditivos, la punta de la nariz, y lo más alto (hélix) y
@@ -29,6 +29,16 @@ sola app, `app.py`:
      escaneo, por encima de cejas y orejas y paralela a la línea oreja–punta de la nariz.
 
    Con varias medidas se usa la mediana y la app muestra cuánto se aparta cada una.
+4. **Cortar el cuello.** Ya en mm, la malla se corta con un plano horizontal a −115 mm
+   del eje de los canales y se tapa. Si la malla no llega a ese plano, se rechaza.
+5. **Gradar.** `hrtf_mesh_grading` simplifica la malla una vez por oreja: triángulos finos
+   en la oreja que se simula y más grandes lejos de ella. Los parámetros (`-x 0.5 -e 1
+   -y 5`) salieron del barrido de -e (`experimentos/barrido_e/`).
+6. **Exportar a Mesh2HRTF.** Blender, en segundo plano, arma `myHRTF_project_L` y
+   `myHRTF_project_R`, listos para NumCalc.
+7. **Simular y armar la HRTF.** NumCalc simula las dos orejas (tarda horas), se verifica que
+   cada frecuencia convergió y se unen las dos orejas en SOFA (HRTF y HRIR), como lo hace
+   `finalize_hrtf_simulation.py` de mesh2hrtf-tools.
 
 ### Decisiones que conviene conocer
 
@@ -50,17 +60,19 @@ sola app, `app.py`:
 |---|---|
 | C, B, D, E1 | aprobados |
 | C2 | rechazado: tiene una cavidad grande en la nuca y tela doblada; hay que repetir el escaneo |
+| A1, A3 | aprobados y cortados a −115 mm; el corte incluye un trozo del hombro izquierdo |
+| A2 | rechazado: la espalda sigue unida al cuello y la malla no llega al corte de −115 mm |
 
 ### Pendiente
 
 - **Validar la escala con personas reales**: medir a varios sujetos (orejas y
   circunferencia), limpiar y comparar. De ahí sale qué medida es la más fiable y el umbral
   de discrepancia, que hoy está sin fijar.
-- **Confirmar en qué unidades espera la malla Mesh2HRTF** antes de exportar.
 - La concha de la oreja sale poco profunda en todos los escaneos: es una limitación de la
   fotogrametría con celular y se resuelve al capturar, no en el código.
-- Las siguientes etapas del pipeline: corte del cuello, gradado de la malla, Mesh2HRTF y
-  las métricas (ITD, ILD, distorsión espectral).
+- **La primera HRTF completa** (A1, las dos orejas, 150 Hz a 24 kHz): la simulación
+  ya está en la app, falta correrla. Su tiempo todavía no está medido.
+- **Las métricas** (ITD, ILD, distorsión espectral) y la evaluación final.
 
 ---
 
@@ -144,10 +156,11 @@ BLENDER_EXE = r"D:\Programas\Blender\blender.exe"
 complemento de Blender. No hace falta instalar el complemento: la app lo carga sola.
 
 Para comprobar que todo funciona en tu máquina (la app también lo comprueba al arrancar
-y lo muestra en los pasos 4 y 5):
+y lo muestra en los pasos 4, 5 y 6):
 ```
 .venv\Scripts\python.exe gradar_malla.py --diagnostico
 .venv\Scripts\python.exe exportar_malla.py --diagnostico
+.venv\Scripts\python.exe simular_malla.py --diagnostico
 ```
 
 **No pongas tus rutas en `config.py`**: si las subes, le cambias las rutas al otro en su
@@ -186,6 +199,10 @@ Flujo dentro de la app:
    en unos segundos y deja las mallas listas para Mesh2HRTF.
 7. **Exportar proyectos**: con el gradado aprobado, Blender (en segundo plano) exporta
    `myHRTF_project_L` y `myHRTF_project_R`, listos para NumCalc.
+8. **Simular y armar la HRTF**: con la exportación aprobada (la carpeta se llena sola, o se
+   escribe la de una sesión anterior), NumCalc simula las dos orejas. Tarda horas; se puede
+   cortar y volver a lanzar, y lo ya simulado se conserva. Al terminar, la HRTF queda en
+   `SOFA_myHRTF_project_merged\`. Desde la terminal: `simular_malla.py "<carpeta>"`.
 
 ---
 
@@ -206,21 +223,29 @@ PROYECTO DE GRADO\
     ├── config_local.py              TUS rutas (no se sube)
     ├── contexto.md                  este archivo
     ├── guia_arranque_pipeline_hrtf.md   guía original de arranque
-    ├── app.py                       la app: puntos, medidas, limpieza, gradado, exportación, visor
+    ├── app.py                       la app: puntos, medidas, limpieza, gradado, exportación, simulación, visor
     ├── limpiar_malla.py             la limpieza desde la terminal (la app la usa por debajo)
     ├── gradar_malla.py              el gradado desde la terminal (ídem); --diagnostico
     ├── exportar_malla.py            la exportación a Mesh2HRTF desde la terminal (ídem); --diagnostico
+    ├── simular_malla.py             la simulación con NumCalc y la HRTF desde la terminal (ídem); --diagnostico
+    ├── exportar_hesuvi.py           los WAV de HeSuVi de una carpeta ya simulada (la simulación ya los deja)
+    ├── simular.bat                  simular con doble clic, sin VS Code ni navegador
     ├── vista_previa.py              renders de una malla desde 6 ángulos (PNG)
     ├── pipeline_hrtf.spec           empaquetado con PyInstaller (ver sección 3b)
     ├── requirements-empaquetado.txt solo para empaquetar
     ├── grading\                     hrtf_mesh_grading.exe + sus DLL (sí se sube; ver LEEME.md)
     ├── mesh2hrtf_1.3.0\             el exportador de Mesh2HRTF para Blender (sí se sube; ver LEEME.md)
+    ├── numcalc\                     NumCalc.exe de 2022 + sus DLL, el del barrido (sí se sube; ver LEEME.md)
     ├── malla\                       matemática de la malla, sin interfaz (persona A)
     │   ├── alineacion.py            matriz de alineación por 3 puntos
     │   ├── limpieza.py              la limpieza completa y la escala
     │   ├── gradado.py               el gradado (llama a grading\hrtf_mesh_grading.exe)
     │   ├── exportacion.py           la exportación (lanza Blender y revisa los proyectos)
     │   ├── blender_exportar.py      lo que corre DENTRO de Blender: materiales, fuente, exportar
+    │   ├── simulacion.py            NumCalc, convergencia, output2hrtf y unión de las dos orejas
+    │   ├── convergencia.py          lee de NC*.out si cada frecuencia convergió
+    │   ├── dtf.py                   la HRIR ecualizada al campo difuso (DTF), para escuchar
+    │   ├── hesuvi.py                la HRTF en WAV de 14 canales para HeSuVi (7.1 virtual con audífonos)
     │   ├── oreja.py                 métricas de la oreja y largo hélix–lóbulo
     │   └── LIMPIEZA.md              por qué cada paso es como es (LEER antes de tocar)
     ├── metricas\                    ITD, ILD, distorsión espectral (persona B, por empezar)
@@ -248,11 +273,16 @@ En `datos\salidas\<nombre de la carpeta del escaneo>\`:
 | `myHRTF_project_L\` | proyecto de Mesh2HRTF con la fuente en la oreja izquierda, listo para NumCalc |
 | `myHRTF_project_R\` | ídem, oreja derecha |
 | `informe_exportacion.json` | nodos y elementos de cada proyecto, cara de la fuente y su distancia al canal marcado, veredicto |
+| `myHRTF_project_*\Output2HRTF\` | los SOFA de cada oreja (output2hrtf de Mesh2HRTF) |
+| `SOFA_myHRTF_project_merged\` | **la HRTF de las dos orejas**: `HRTF_<rejilla>_48000.sofa`, `HRIR_<rejilla>_48000.sofa` y `HRIR_<rejilla>_44100.sofa` (rejillas Default y ARI), `parameters.json` y figuras de diagnóstico |
+| `SOFA_myHRTF_project_merged\HRIR_Default_*_DTF.sofa` | la HRIR **ecualizada al campo difuso** (DTF), para escuchar con programas que cargan SOFA: timbre neutro. **No para métricas**: la ILD y la fase por frecuencia no cambian, pero sí el espectro absoluto y los resúmenes (ILD de banda ancha, ITD por correlación) |
+| `SOFA_myHRTF_project_merged\HeSuVi_*.wav` | para **escuchar** la HRTF en Windows con HeSuVi: `HeSuVi_DTF_48000.wav` (ecualizada al campo difuso, la recomendada) y `HeSuVi_48000.wav` (tal cual), también a 44,1 kHz |
+| `informe_simulacion.json` | convergencia de cada frecuencia, tiempos, RAM, huellas de los SOFA, veredicto |
 
 Cada limpieza o gradado **sobrescribe** lo anterior de esa carpeta. La exportación
 también reemplaza los proyectos, **salvo que alguno ya tenga resultados de NumCalc**: en
 ese caso no toca ninguno (hay que moverlo o renombrarlo a mano). Los parámetros están en
-`config.py`: gradado (`GRADING_X_MM`, `GRADING_Y_MM`) y exportación
+`config.py`: gradado (`GRADING_X_MM`, `GRADING_E_MM`, `GRADING_Y_MM`) y exportación
 (`EXPORTACION_MESH2HRTF`: frecuencias, mallas de evaluación, método, etc.).
 
 La fuente de cada proyecto es **una sola cara**: la más cercana a la entrada del canal
@@ -268,7 +298,8 @@ mallas van en mm (`unit='mm'`).
 ```
 
 Deja `dist\pipeline_hrtf\` (~470 MB): se reparte la carpeta entera y se abre
-`pipeline_hrtf.exe`. Lleva dentro el programa del gradado y el exportador de Mesh2HRTF;
+`pipeline_hrtf.exe`. Lleva dentro el programa del gradado, el exportador de Mesh2HRTF y
+NumCalc;
 **Blender no va dentro** (hay que tenerlo instalado). Los datos van a `datos\` al lado
 del `.exe`. `dist\` y `build\` no se suben.
 

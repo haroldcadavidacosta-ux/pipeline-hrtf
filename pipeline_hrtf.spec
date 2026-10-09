@@ -13,8 +13,11 @@ Resultado: dist\\pipeline_hrtf\\ (se reparte la carpeta entera; se abre pipeline
   encuentra sola (config.CARPETA_RECURSOS).
 - mesh2hrtf_1.3.0\ (exportador de Mesh2HRTF) y malla\blender_exportar.py quedan en
   _internal\. Blender NO va dentro: hay que tenerlo instalado (se busca solo).
-- La limpieza, el gradado y la exportación corren en procesos aparte: el .exe se relanza
-  a sí mismo con el subcomando "limpiar", "gradar" o "exportar" (ver app.py).
+- numcalc\\ (NumCalc.exe de 2022 y sus DLL) queda en _internal\\numcalc (config.NUMCALC_EXE).
+  El paquete de Python de Mesh2HRTF (output2hrtf, manage_numcalc) y sus dependencias (sofar,
+  pyfar, spharpy, matplotlib) van dentro.
+- La limpieza, el gradado, la exportación y la simulación corren en procesos aparte: el .exe
+  se relanza a sí mismo con el subcomando "limpiar", "gradar", "exportar" o "simular" (ver app.py).
 """
 import os
 from pathlib import Path
@@ -26,16 +29,23 @@ datas = [
     (str(Path(nicegui.__file__).parent), "nicegui"),     # lo mismo que hace nicegui-pack
     (os.path.join(SPECPATH, "grading"), "grading"),       # binario del gradado + DLL, sin tocar
     (os.path.join(SPECPATH, "mesh2hrtf_1.3.0"), "mesh2hrtf_1.3.0"),   # exportador de Mesh2HRTF
+    (os.path.join(SPECPATH, "numcalc"), "numcalc"),       # NumCalc.exe + DLL, sin tocar
     # lo ejecuta el Python de Blender, no el de la app: va como archivo suelto
     (os.path.join(SPECPATH, "malla", "blender_exportar.py"), "malla"),
 ]
 datas += collect_data_files("trimesh")
 binaries = []
-hiddenimports = ["limpiar_malla", "gradar_malla", "exportar_malla"]
-d, b, h = collect_all("pymeshlab")                         # sus plugins y DLL de Qt/MeshLab
-datas += d
-binaries += b
-hiddenimports += h
+hiddenimports = ["limpiar_malla", "gradar_malla", "exportar_malla", "simular_malla", "exportar_hesuvi",
+                 # las figuras de diagnóstico de la HRTF se guardan en PDF y JPEG; PyInstaller
+                 # no ve estos backends porque matplotlib los carga por nombre
+                 "matplotlib.backends.backend_pdf", "matplotlib.backends.backend_agg"]
+# pymeshlab: sus plugins y DLL de Qt/MeshLab. mesh2hrtf, sofar (convenciones SOFA en .json),
+# pyfar y spharpy: la salida de NumCalc a SOFA
+for paquete in ("pymeshlab", "mesh2hrtf", "sofar", "pyfar", "spharpy"):
+    d, b, h = collect_all(paquete)
+    datas += d
+    binaries += b
+    hiddenimports += h
 
 a = Analysis(
     [os.path.join(SPECPATH, "app.py")],
@@ -44,8 +54,9 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     # config_local.py tiene rutas de cada máquina: no se empaqueta. El resto no lo usa la app.
+    # matplotlib sí va: pyfar lo importa (y las figuras de diagnóstico de la HRTF lo usan).
     excludes=["config_local", "streamlit", "plotly", "pyvista", "vtk", "vtkmodules",
-              "matplotlib", "tkinter", "PyInstaller"],
+              "tkinter", "PyInstaller"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

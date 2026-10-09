@@ -22,9 +22,10 @@ RUTA_DATOS = str(CARPETA_APP / "datos")
 # None = se busca solo en C:\Program Files\Blender Foundation (la versión más alta).
 # Solo hace falta ponerlo si Blender está instalado en otro sitio.
 BLENDER_EXE = None
-# Vienen con la app (carpetas grading/ y mesh2hrtf_1.3.0/): no hace falta configurarlos
+# Vienen con la app (carpetas grading/, mesh2hrtf_1.3.0/ y numcalc/): no hace falta configurarlos
 GRADING_EXE = str(CARPETA_RECURSOS / "grading" / "hrtf_mesh_grading.exe")
 MESH2HRTF_PATH = str(CARPETA_RECURSOS / "mesh2hrtf_1.3.0" / "mesh2hrtf")
+NUMCALC_EXE = str(CARPETA_RECURSOS / "numcalc" / "NumCalc.exe")
 
 # --- Gradado (hrtf_mesh_grading) --------------------------------------------
 # -e 1 -y 5: elegido para producción en el barrido de -e (fase 4, 2026-10-07; ver
@@ -53,6 +54,12 @@ EXPORTACION_MESH2HRTF = {
     "densityOfMedium": "1.1839",
 }
 DISTANCIA_CANAL_MAX_MM = 2.0      # la cara de la fuente debe quedar así de cerca del canal marcado
+
+# --- Simulación con NumCalc (manage_numcalc de Mesh2HRTF) -------------------
+# Factor sobre la RAM que NumCalc estima para cada frecuencia antes de lanzarla. 1.05 es el de
+# manage_numcalc; el barrido usó 1.0 porque -e 0,5 no cabía con más (ver experimentos/barrido_e).
+SIMULACION_MARGEN_RAM = 1.05
+CARPETA_SOFA = "sofa"             # dentro de la carpeta del escaneo: la HRTF de las dos orejas
 
 # --- Geometría ------------------------------------------------------------
 CORTE_CUELLO_MM = -115.0          # respecto del eje interaural
