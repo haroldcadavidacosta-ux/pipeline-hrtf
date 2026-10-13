@@ -67,6 +67,11 @@ AID_MIN_MM, AID_MAX_MM = 120.0, 200.0
 
 # --- Estimadores ----------------------------------------------------------
 FC_ITD = 1500.0                   # Hz
+ITD_ORDEN_FILTRO = 4              # Butterworth paso bajo de la ITD, aplicado ida y vuelta (fase cero)
+ILD_BANDAS_HZ = (500.0, 16000.0)  # centros nominales de tercio de octava que se reportan
+ILD_INTERPRETAR_DESDE_HZ = 1000.0 # por debajo, con Δf = 150 Hz, hay 0 o 1 línea por banda
+UMBRAL_ITD_S = 16e-6              # umbral perceptual de referencia del marco (≈ 16 µs)
+UMBRAL_ILD_DB = 1.0               # ídem para la ILD por tercio de octava
 
 # --- Sobreescritura local -------------------------------------------------
 try:
