@@ -14,6 +14,9 @@ RADIO_PABELLON = 0.25   # AID
 # la misma medida que se toma con una regla en la persona para la escala.
 PUNTOS_LARGO = {"izq": ("helix_izquierdo", "lobulo_izquierdo"),
                 "der": ("helix_derecho", "lobulo_derecho")}
+# Puntos del ancho bitragial (tragion: la muesca justo encima de cada trago), la misma
+# medida que se toma con pie de rey en la persona para la escala. Opcionales.
+PUNTOS_BITRAGO = ("trago_izquierdo", "trago_derecho")
 
 
 def largos(puntos):
@@ -24,6 +27,15 @@ def largos(puntos):
         if arriba in puntos and abajo in puntos:
             out[lado] = float(np.linalg.norm(np.subtract(puntos[arriba]["xyz"], puntos[abajo]["xyz"])))
     return out
+
+
+def bitrago(puntos):
+    """Ancho bitragial (unidades del modelo) entre los dos tragos marcados, o None si
+    falta alguno."""
+    izq, der = PUNTOS_BITRAGO
+    if izq in puntos and der in puntos:
+        return float(np.linalg.norm(np.subtract(puntos[izq]["xyz"], puntos[der]["xyz"])))
+    return None
 
 
 def metricas(V, F, aid):

@@ -123,6 +123,14 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      provisional: falta validar cuál de las medidas es más fiable. El umbral de
      discrepancia (`DISCREPANCIA_OREJAS_MAX`) está en `None` (solo se informa) hasta
      tener medidas reales.
+   - `--bitrago-mm` (opcional, con pie de rey): ancho bitragial, de tragion a tragion (la
+     muesca justo encima de cada trago). Se compara con la distancia entre los dos tragos
+     marcados en `app.py` (puntos 8 y 9, opcionales; `informe["bitrago_modelo"]`). Si se
+     da, **manda él** y las medidas caseras quedan de control: su `escala.discrepancias`
+     frente al bitragial es directamente el error del método casero. Se eligió el
+     bitragial porque es la medida de instrumento más cercana al AID, que gobierna la ITD
+     (en A1 frente a A3, 2,3 mm de AID fueron ~20–26 µs de ITD lateral). Con los
+     tragos marcados, el informe da `escala.bitrago_mm` aunque no se use para escalar.
    - `--aid-mm` sigue disponible (factor directo; si se da, manda él y la circunferencia
      es control al 2 %), pero mide entre ENTRADAS de canal, no trago a trago.
    - Después de escalar, el control de calidad exige el AID dentro de

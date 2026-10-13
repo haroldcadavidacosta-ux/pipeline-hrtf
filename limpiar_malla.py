@@ -7,6 +7,7 @@ y las decisiones de diseño en malla/LIMPIEZA.md. Lo mismo se puede hacer desde 
 Ejecutar:
   .venv/Scripts/python.exe limpiar_malla.py RUTA/3DModel.obj --oreja-izq-mm 63 --oreja-der-mm 62
   .venv/Scripts/python.exe limpiar_malla.py RUTA/3DModel.obj --circunferencia-mm 572
+  .venv/Scripts/python.exe limpiar_malla.py RUTA/3DModel.obj --bitrago-mm 148 --oreja-izq-mm 63
 
 Sale con código 0 si la malla pasa el control de calidad y 1 si hay que repetir el escaneo.
 """
@@ -29,6 +30,10 @@ def principal(argv: list[str] | None = None) -> None:
     ap.add_argument("--circunferencia-mm", type=float,
                     help="circunferencia de la cabeza con cinta, con el gorro del escaneo, por encima de "
                          "cejas y orejas y paralela a la línea oreja-punta de la nariz, en mm")
+    ap.add_argument("--bitrago-mm", type=float,
+                    help="ancho bitragial con pie de rey, de tragion a tragion (la muesca justo encima de "
+                         "cada trago), en mm. Necesita los dos tragos marcados en app.py. Si se da, manda "
+                         "sobre las orejas y la circunferencia, que quedan de control")
     ap.add_argument("--aid-mm", type=float,
                     help="distancia entre las ENTRADAS de los canales auditivos, en mm (no trago a trago, "
                          "que es más ancha); ver LIMPIEZA.md")
@@ -42,7 +47,7 @@ def principal(argv: list[str] | None = None) -> None:
     salida = a.salida or Path(config.RUTA_DATOS) / "salidas" / a.malla.resolve().parent.name
 
     informe = limpiar_auto(a.malla, landmarks, salida, a.suavizar, a.aid_mm, a.circunferencia_mm,
-                           (a.oreja_izq_mm, a.oreja_der_mm))
+                           (a.oreja_izq_mm, a.oreja_der_mm), a.bitrago_mm)
     cc = informe["control_calidad"]
     sep = "\n  - "
     print(f"Resultados en {salida}")

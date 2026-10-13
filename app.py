@@ -3,10 +3,11 @@
 1. Malla y puntos. Se carga el escaneo y se marcan con DOBLE CLIC siete puntos: la
    entrada de los dos canales auditivos y la punta de la nariz (definen la alineación,
    ver malla/alineacion.py) y lo más alto y lo más bajo de cada oreja (su largo sirve
-   para la escala). Se guardan <nombre>_alineada.ply y <nombre>_landmarks.json junto
+   para la escala). Opcionalmente, dos más: los tragos, para escalar con el ancho
+   bitragial medido con pie de rey. Se guardan <nombre>_alineada.ply y <nombre>_landmarks.json junto
    a la malla.
-2. Medidas de la persona (opcionales): largo de cada oreja y circunferencia de la
-   cabeza. La limpieza corre limpiar_malla.py en un proceso aparte, con su salida en
+2. Medidas de la persona (opcionales): ancho bitragial (pie de rey), largo de cada
+   oreja y circunferencia de la cabeza. La limpieza corre limpiar_malla.py en un proceso aparte, con su salida en
    pantalla, así que da lo mismo que desde la terminal.
 3. Resultado: veredicto del control de calidad, escala, y las mallas de cada paso en
    el mismo visor.
@@ -46,7 +47,7 @@ from malla.gradado import MALLA_MM
 from malla.exportacion import comprobar_blender
 from malla.gradado import SALIDAS as SALIDAS_GRADADO
 from malla.gradado import comprobar_binario
-from malla.oreja import PUNTOS_LARGO
+from malla.oreja import PUNTOS_BITRAGO, PUNTOS_LARGO
 from malla.simulacion import CARPETA_SOFA, comprobar_numcalc
 
 RAIZ = Path(__file__).resolve().parent
@@ -64,11 +65,15 @@ RESIDUO_MAX = 1e-6
 # puede ser una oreja o una cabeza en milímetros. No juzgan si la medida es buena.
 RANGO_OREJA_MM = (20, 120)
 RANGO_CIRCUNFERENCIA_MM = (300, 900)
+RANGO_BITRAGO_MM = (90, 220)
 
-# Los siete puntos, en el orden en que se marcan: (clave, texto, color del marcador).
+# Los puntos, en el orden en que se marcan: (clave, texto, color del marcador).
 # Los tres primeros definen la alineación; los de las orejas, su largo (malla/oreja.py).
+# Los siete primeros son obligatorios; los dos tragos, opcionales (solo hacen falta para
+# escalar con el ancho bitragial medido con pie de rey).
 HELIX_IZQ, LOBULO_IZQ = PUNTOS_LARGO["izq"]
 HELIX_DER, LOBULO_DER = PUNTOS_LARGO["der"]
+TRAGO_IZQ, TRAGO_DER = PUNTOS_BITRAGO
 LANDMARKS = [
     ("oreja_izquierda", "la entrada del canal auditivo IZQUIERDO", "#e53935"),
     ("oreja_derecha", "la entrada del canal auditivo DERECHO", "#43a047"),
@@ -77,11 +82,17 @@ LANDMARKS = [
     (LOBULO_IZQ, "el punto más BAJO de la oreja IZQUIERDA (lóbulo)", "#fb8c00"),
     (HELIX_DER, "el punto más ALTO de la oreja DERECHA (borde del hélix)", "#8e24aa"),
     (LOBULO_DER, "el punto más BAJO de la oreja DERECHA (lóbulo)", "#8e24aa"),
+    (TRAGO_IZQ, "el TRAGO IZQUIERDO (la muesca justo encima del trago, donde se apoyó el pie de rey)",
+     "#00897b"),
+    (TRAGO_DER, "el TRAGO DERECHO (la muesca justo encima del trago, donde se apoyó el pie de rey)",
+     "#00897b"),
 ]
 N_ALINEACION = 3
+N_OBLIGATORIOS = 7
 # La cámara va sola a donde está el punto que toca marcar (clave: cuántos hay marcados).
 # Antes de alinear es una suposición por los ejes del archivo; después, exacta.
-VISTA_PARA_PUNTO = {0: "Izquierda", 1: "Derecha", 2: "Frente", 3: "Izquierda", 5: "Derecha"}
+VISTA_PARA_PUNTO = {0: "Izquierda", 1: "Derecha", 2: "Frente", 3: "Izquierda", 5: "Derecha",
+                    7: "Izquierda", 8: "Derecha"}
 
 # Vistas en el sistema anatómico: dirección desde la que se mira y "arriba" de la pantalla
 VISTAS = {
@@ -112,7 +123,14 @@ MALLAS_EN_MM = {MALLA_MM, *SALIDAS_GRADADO.values()}   # escaladas después de a
 
 INSTRUCCIONES_MEDIDAS = """
 **Todas son opcionales.** Sin ninguna, la malla queda sin escala real (en las unidades
-arbitrarias de KIRI). Con varias, se usa la mediana y se muestra cuánto se aparta cada una.
+arbitrarias de KIRI). Con varias, se usa la mediana y se muestra cuánto se aparta cada una;
+si se da el ancho bitragial, manda él y las demás quedan de control.
+
+**Ancho bitragial (pie de rey).** De tragion a tragion: la pequeña muesca justo encima de
+cada trago (la pestaña de cartílago delante del canal), por delante de la cara, sin apretar
+la piel. Tres veces y la del medio; mejor si mide otra persona, el mismo día del escaneo.
+Hay que marcar en la malla los dos tragos (puntos 8 y 9) **en el mismo sitio** donde se
+apoyó el pie de rey.
 
 **Largo de cada oreja.** Con una regla, en línea recta desde el punto más alto del borde
 de la oreja (hélix) hasta el punto más bajo del lóbulo, sin aplastarla. Son los mismos dos
@@ -291,6 +309,8 @@ class AppPipeline:
                                              validation=en_mm(RANGO_OREJA_MM))
             self.campo_circ = ui.number("Circunferencia de la cabeza", placeholder="p. ej. 570", suffix="mm",
                                         validation=en_mm(RANGO_CIRCUNFERENCIA_MM))
+            self.campo_bitrago = ui.number("Ancho bitragial (pie de rey)", placeholder="p. ej. 148",
+                                           suffix="mm", validation=en_mm(RANGO_BITRAGO_MM))
         with ui.row().classes("items-center"):
             self.boton_limpiar = ui.button("Limpiar malla", on_click=self.limpiar)
             self.spinner = ui.spinner(size="lg")
@@ -507,11 +527,16 @@ class AppPipeline:
         n = len(self.puntos)
         if self.malla is None:
             self.instruccion.set_text("")
+        elif n < N_OBLIGATORIOS:
+            self.instruccion.set_text(
+                f"Punto {n + 1} de {N_OBLIGATORIOS}: doble clic sobre {LANDMARKS[n][1]}.")
         elif n < len(LANDMARKS):
             self.instruccion.set_text(
-                f"Punto {n + 1} de {len(LANDMARKS)}: doble clic sobre {LANDMARKS[n][1]}.")
+                ("Siete puntos marcados: ya se puede guardar. " if n == N_OBLIGATORIOS else "")
+                + f"Opcional, solo si se midió con pie de rey: punto {n + 1} de {len(LANDMARKS)}, "
+                f"doble clic sobre {LANDMARKS[n][1]}.")
         else:
-            self.instruccion.set_text("Siete puntos marcados. Revisa los resultados y guarda.")
+            self.instruccion.set_text("Todos los puntos marcados. Revisa los resultados y guarda.")
 
         self.lista_puntos.clear()
         with self.lista_puntos:
@@ -543,13 +568,17 @@ class AppPipeline:
                             ui.label(f"AVISO: en la oreja {lado} el punto ALTO quedó por debajo del BAJO. "
                                      "¿Se marcaron al revés o lejos de los extremos? Deshacer y volver "
                                      "a marcar.").classes("text-orange-700")
+                if TRAGO_IZQ in puntos and TRAGO_DER in puntos:
+                    ancho = float(np.linalg.norm(puntos[TRAGO_IZQ] - puntos[TRAGO_DER]))
+                    ui.label(f"Ancho bitragial en la malla: {ancho:.4f} ({ancho / self.aid:.3f} AID)")
                 if self.residuo > RESIDUO_MAX:
                     ui.label(f"ERROR: residuo mayor que {RESIDUO_MAX:.0e}, hay un fallo en la "
                              "matriz. No se puede guardar.").classes("text-red-700 font-bold")
 
         self.nota_ejes.set_text("(ejes anatómicos)" if self.T is not None else
                                 "(ejes supuestos del archivo hasta marcar los 3 primeros puntos)")
-        completo = n == len(LANDMARKS) and self.residuo <= RESIDUO_MAX
+        # los tragos van juntos: o ninguno o los dos
+        completo = n in (N_OBLIGATORIOS, len(LANDMARKS)) and self.residuo <= RESIDUO_MAX
         ocupado = self.tarea_en_curso() is not None
         self.boton_guardar.set_enabled(completo and not ocupado)
         self.boton_limpiar.set_enabled(self.guardado and not ocupado)
@@ -619,7 +648,7 @@ class AppPipeline:
             ui.notify("Para marcar puntos, muestra el escaneo original.", type="warning")
             return
         if len(self.puntos) >= len(LANDMARKS):
-            ui.notify("Ya están los siete puntos. Usa Deshacer o Empezar de nuevo.", type="warning")
+            ui.notify("Ya están todos los puntos. Usa Deshacer o Empezar de nuevo.", type="warning")
             return
         impactos = [h for h in e.hits if h.object_id in self.ids_malla]
         if not impactos:
@@ -668,7 +697,8 @@ class AppPipeline:
                 break
             _, indice = self.arbol.query(guardados[clave]["xyz"])
             self.puntos.append({"clave": clave, "indice": int(indice), "xyz": self.vert[indice].copy()})
-        self.guardado = len(self.puntos) == len(LANDMARKS)   # el JSON ya es el de estos puntos
+        # el JSON ya es el de estos puntos (con o sin los tragos opcionales)
+        self.guardado = len(self.puntos) == len(guardados) and len(self.puntos) in (N_OBLIGATORIOS, len(LANDMARKS))
         self.refrescar()
         self.mostrar_original()
         ui.notify(f"{len(self.puntos)} puntos recuperados.")
@@ -780,13 +810,18 @@ class AppPipeline:
         argumentos = [str(self.ruta), "--landmarks", str(self.ruta_json), "--salida", str(salida)]
         for opcion, campo, (lo, hi) in (("--oreja-izq-mm", self.campo_oreja_izq, RANGO_OREJA_MM),
                                         ("--oreja-der-mm", self.campo_oreja_der, RANGO_OREJA_MM),
-                                        ("--circunferencia-mm", self.campo_circ, RANGO_CIRCUNFERENCIA_MM)):
+                                        ("--circunferencia-mm", self.campo_circ, RANGO_CIRCUNFERENCIA_MM),
+                                        ("--bitrago-mm", self.campo_bitrago, RANGO_BITRAGO_MM)):
             if campo.value:
                 if not lo <= campo.value <= hi:
                     ui.notify(f"{campo.props['label']}: {campo.value} no puede estar en milímetros. "
                               "¿Está en metros o en cm? Escribe mm (63, no 0.063).", type="negative")
                     return
                 argumentos += [opcion, str(campo.value)]
+        if self.campo_bitrago.value and len(self.puntos) < len(LANDMARKS):
+            ui.notify("Para usar el ancho bitragial hay que marcar los dos tragos (puntos 8 y 9) y "
+                      "guardar los puntos.", type="negative")
+            return
 
         self.limpiando = True
         self.invalidar()
@@ -949,6 +984,8 @@ class AppPipeline:
                 ui.label(f"Fuente: {esc['fuente']}  ·  factor {esc['factor']:.3f} mm por unidad")
                 partes = [f"AID {esc['aid_mm']} mm", f"circunferencia en la malla {esc['circunferencia_mm']} mm"]
                 partes += [f"oreja {lado} {mm} mm" for lado, mm in esc.get("largo_oreja_mm", {}).items()]
+                if "bitrago_mm" in esc:
+                    partes.append(f"bitragial {esc['bitrago_mm']} mm")
                 ui.label("Con esa escala: " + "  ·  ".join(partes))
                 for fuente, dif in esc.get("discrepancias", {}).items():
                     ui.label(f"{fuente}: se aparta un {100 * dif:.1f} % de la escala usada")
