@@ -211,30 +211,37 @@ def repetibilidad() -> dict:
 # ---------------------------------------------------------------- figuras
 
 def figura_mapa_sd(pos: np.ndarray, mapas: dict) -> None:
-    fig, ejes = plt.subplots(1, len(mapas), figsize=(11, 3.4), sharey=True)
-    for ax, (nombre, v) in zip(ejes, mapas.items()):
+    fig, ejes = plt.subplots(1, len(mapas), figsize=(11, 3.6), sharey=True)
+    for ax, letra, (nombre, v) in zip(ejes, "ab", mapas.items()):
         sc = ax.scatter(pos[:, 0], pos[:, 1], c=v, cmap="viridis", s=8, vmin=0, vmax=10)
-        ax.set_title(f"SD A3 frente a A1, {nombre} kHz")
+        ax.set_title(f"({letra}) {nombre.replace('-', '–')} kHz", loc="left")
         ax.set_xlabel("Azimut (°)")
-        ax.set_xticks(range(0, 361, 90))
+        ax.set_xticks(range(0, 361, 45))
+        ax.set_xlim(-5, 360)
     ejes[0].set_ylabel("Elevación (°)")
-    fig.colorbar(sc, ax=ejes, label="SD (dB), media de las dos orejas")
-    fig.savefig(SALIDA / "figuras" / "repetibilidad_sd_mapa.png", dpi=150, bbox_inches="tight")
+    fig.colorbar(sc, ax=ejes, label="SD (dB), media de las dos orejas", extend="max")
+    fig.savefig(SALIDA / "figuras" / "eval_repetibilidad_sd.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
 def figura_personalizacion(res: dict) -> None:
     rot = {"sd_4-11": "SD 4–11 kHz (dB)", "sd_12-16": "SD 12–16 kHz (dB)",
-           "itd_mae_us": "|e_ITD| medio (µs)", "ild_mae_db": "|e_ILD| medio, ≥1 kHz (dB)"}
-    fig, ejes = plt.subplots(1, 4, figsize=(13, 3.2))
-    for ax, m in zip(ejes, METRICAS_F4):
-        ax.hist(res["_inter_valores"][m], bins=40, color="#9ec5f4", label="inter: pares de HUTUBS")
-        ax.axvline(res["intra"][m], color="#eb6834", lw=2, label="intra: A1–A3")
+           "itd_mae_us": r"$|e_{\mathrm{ITD}}|$ medio ($\mu$s)",
+           "ild_mae_db": r"$|e_{\mathrm{ILD}}|$ medio, desde 1 kHz (dB)"}
+    fig, ejes = plt.subplots(1, 4, figsize=(13, 3.4))
+    for ax, letra, m in zip(ejes, "abcd", METRICAS_F4):
+        v = np.array(res["_inter_valores"][m])
+        ax.hist(v, bins=40, color="#9ec5f4", label="Entre personas (pares de HUTUBS)")
+        ax.axvline(np.percentile(v, PERCENTIL_INTER), color="#52514e", lw=1, ls="--",
+                   label=f"Percentil {PERCENTIL_INTER:g} entre personas")
+        ax.axvline(res["intra"][m], color="#eb6834", lw=2.2, label="Misma persona (A1–A3)")
         ax.set_xlabel(rot[m])
-    ejes[0].set_ylabel("Pares de personas")
-    ejes[0].legend(frameon=False, fontsize=7)
-    fig.tight_layout()
-    fig.savefig(SALIDA / "figuras" / "personalizacion.png", dpi=150)
+        ax.set_title(f"({letra})", loc="left")
+    ejes[0].set_ylabel("Número de pares")
+    fig.legend(*ejes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False,
+               bbox_to_anchor=(0.5, -0.04))
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.savefig(SALIDA / "figuras" / "eval_personalizacion.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 

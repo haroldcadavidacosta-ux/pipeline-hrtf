@@ -1,0 +1,186 @@
+% =====================================================================
+% CAMBIO EN LA INTRODUCCIÓN DE LA METODOLOGÍA (párrafo de las seis fases).
+% Reemplazar la última oración:
+%   «Finalmente, la última fase define cómo se evalúa la HRTF que entrega el
+%   sistema, comparando dos capturas de una misma persona (A~A y A~C) en
+%   tres niveles: geometría, espectro y pistas binaurales.»
+% por:
+% =====================================================================
+
+Finalmente, la última fase evalúa el prototipo con cuatro preguntas: si funciona de principio a fin, si la HRTF que entrega se comporta como una HRTF humana, si dos capturas de una misma persona (A~A y A~C) dan la misma HRTF y si la HRTF conserva los rasgos propios de la persona, con los niveles espectral y binaural de la evaluación (Sección~\ref{subsec:evaluacion}).
+
+% =====================================================================
+% BORRADOR 1: METODOLOGÍA. Va al final de Metodologia.tex, después de
+% «Decisión de producción y comprobación de robustez».
+% =====================================================================
+
+\subsection{Evaluación del prototipo}
+\label{subsec:evaluacion}
+
+La evaluación del prototipo se realizó a partir de los registros que genera el propio sistema, de las HRTF de producción de A~A y A~C y de la base de datos pública HUTUBS~\cite{Brinkmann2019}. Se organiza en cuatro preguntas de exigencia creciente: si el sistema funciona de principio a fin, si la HRTF que entrega se comporta como una HRTF humana, si dos capturas de la misma persona dan la misma HRTF y si la HRTF conserva los rasgos propios de la persona. Las dos últimas aplican a las HRTF de producción los niveles espectral y binaural de la evaluación del marco teórico (Sección~\ref{sec:marco_teorico}); el nivel geométrico se cubre con los requisitos que el control de calidad verifica en cada malla. Como en el barrido, los métodos, los parámetros y los criterios de aceptación se registraron con fecha en el sistema de control de versiones antes de calcular cualquier comparación.
+
+\subsubsection{Datos de referencia}
+
+Como referencia de HRTF humanas se usa la base HUTUBS~\cite{Brinkmann2019}, que reúne para 96 entradas la HRTF medida en cámara anecoica, en 440 direcciones, y la HRTF simulada a partir de la malla de cada persona, en 1730 direcciones, ambas a 44,1~kHz y en formato SOFA. De ellas se excluyen las entradas 1 y 96, que corresponden al maniquí FABIAN, y la 88, que es una segunda medición de la persona de la entrada 22, de modo que quedan 93 personas. La pareja 22 y 88 se usa aparte, como ejemplo de una misma persona medida dos veces.
+
+\subsubsection{Tratamiento común}
+
+Todas las comparaciones se hacen sobre la HRTF sin ecualizar, nunca sobre la DTF (Sección~\ref{subsubsec:dtf}). Para que el prototipo y HUTUBS queden en las mismas frecuencias, se usan sus HRIR a 44,1~kHz y se transforman con 294 muestras: las del prototipo tienen exactamente esa longitud, y las de HUTUBS, de 256 muestras, se completan con ceros. Así, todas las HRTF quedan en líneas separadas 150~Hz, como la simulación del prototipo. La ITD y la ILD se calculan con los estimadores de las Secciones~\ref{subsubsec:est-itd} y~\ref{subsubsec:est-ild}, y la distorsión espectral con la Ecuación~\eqref{eq:sd_omega}, en las mismas dos bandas del barrido, de 4 a 11~kHz y de 12 a 16~kHz. Los promedios sobre direcciones se ponderan por el área de Voronoi de cada dirección (Sección~\ref{subsubsec:rejillas}), para que representen la esfera completa y sean comparables entre rejillas distintas.
+
+\subsubsection{Verificación funcional}
+
+La primera pregunta es si el prototipo hace lo que promete: llevar la captura del celular hasta un archivo SOFA válido sin intervención experta. Se verifica con los registros que el propio sistema genera en cada etapa: el resultado del control de calidad de cada captura y el motivo de cada rechazo, la convergencia de todas las frecuencias, la conformidad de cada archivo SOFA con su convención, comprobada con el verificador de la biblioteca sofar, la trazabilidad de cada archivo y la equivalencia de las herramientas reimplementadas con las originales (Sección~\ref{subsubsec:res_equivalencia}).
+
+\subsubsection{Validez física}
+
+La segunda pregunta es si la HRTF producida se comporta como una HRTF humana. Para responderla se comparan rasgos de las HRTF de A~A y A~C con la dispersión de esos mismos rasgos en las 93 personas de HUTUBS simuladas: la ITD con la fuente a cada lado (azimut de 90° y 270°, elevación 0°), la ITD máxima y la ILD con la fuente a la izquierda en las bandas de 1, 2, 4, 8 y 16~kHz. Se registró como criterio que cada rasgo quedara entre los percentiles 2,5 y 97,5 de HUTUBS, y que el nivel medio entre 150 y 450~Hz quedara a menos de 1~dB de 0~dB, el valor que toma la HRTF a baja frecuencia (Sección~\ref{subsubsec:hrtf}).
+
+\subsubsection{Repetibilidad}
+
+La tercera pregunta es si dos capturas de la misma persona producen la misma HRTF. Se comparan las HRTF de producción de A~A y A~C, con A~A como referencia, en las dos orejas y en la rejilla Default. En el nivel espectral se reporta la SD por dirección y su mapa, y en el binaural, los errores de ITD e ILD de la Ecuación~\eqref{eq:error-itd-ild}, con su error absoluto medio, su máximo y la fracción de direcciones que superan los umbrales de 16~$\mu$s y 1~dB. Antes de calcularlo se registró una predicción para la ITD: como la AID escalada de A~C es 2,3~mm mayor que la de A~A, su ITD lateral debía superar a la de A~A entre 0 y 20~$\mu$s, según la sensibilidad de la Ecuación de Kuhn (Sección~\ref{subsubsec:aid}). Esta comparación mide la precisión del proceso de captura, no su exactitud.
+
+\subsubsection{Personalización}
+
+La cuarta pregunta es si la HRTF conserva los rasgos propios de la persona o si dos capturas de alguien difieren tanto como dos personas distintas. Para responderla se compara la diferencia entre dos capturas de la misma persona (intra), A~A frente a A~C, con la diferencia entre personas distintas (inter), calculada en todos los pares de las 93 personas de HUTUBS simuladas, es decir, 4\,278 pares. Cada comparación se hace dentro de su propia rejilla, de modo que ninguna empareja direcciones de rejillas distintas. Se usan cuatro métricas: la SD media en 4 a 11~kHz y en 12 a 16~kHz, y el error absoluto medio de la ITD y de la ILD, este último en las bandas desde 1~kHz.
+
+Se registraron tres criterios. El decisivo es que la SD intra en 4 a 11~kHz, la banda de la pina, quede por debajo del percentil~5 de la inter; los otros dos aplican la misma condición a la ITD y a la ILD. Si se cumple, el error que introduce la captura con celular es menor que la diferencia entre personas, y el prototipo conserva rasgos individuales. Como contexto, se calcula lo mismo con las HRTF medidas de HUTUBS: la persona medida dos veces frente a los pares de personas distintas.
+
+La comparación tiene una limitación declarada desde el registro: la intra y la inter provienen de geometrías obtenidas de forma distinta, la fotogrametría con celular en A y las mallas de la propia base en HUTUBS, y de simulaciones distintas. Por eso responde si el ruido de la captura es menor que la diferencia entre personas, no si la HRTF de A es exacta.
+
+
+% =====================================================================
+% BORRADOR 2: RESULTADOS. Va al final de Resultados.tex, después de
+% «Comprobación de robustez».
+% =====================================================================
+
+\subsection{Evaluación del prototipo}
+\label{subsec:res_evaluacion}
+
+Se presentan los resultados de las cuatro preguntas de la Sección~\ref{subsec:evaluacion}, en el mismo orden.
+
+\subsubsection{Verificación funcional}
+\label{subsubsec:res_funcional}
+
+La Tabla~\ref{tab:res_funcional} reúne las comprobaciones.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Verificación funcional del prototipo}
+\label{tab:res_funcional}
+\begin{tabular}{p{0.30\linewidth}p{0.48\linewidth}p{0.12\linewidth}}
+\hline
+Comprobación & Resultado & ¿Cumple? \\
+\hline
+Control de calidad de la limpieza & 8 capturas: 6 aprobadas y 2 rechazadas, C (2.ª captura) por túneles y A~B por no llegar al corte del cuello; ambos rechazos corresponden a defectos reales de la captura (Tabla~\ref{tab:capturas}) & Sí \\
+Flujo completo & A~A y A~C recorrieron todas las etapas con los parámetros de producción (Tabla~\ref{tab:produccion_A}) & Sí \\
+Convergencia & 160 de 160 frecuencias en las dos orejas de A~A y de A~C, con un máximo de 68 iteraciones & Sí \\
+Conformidad de los SOFA & 16 de 16 archivos (8 por sujeto) aprobados por el verificador de sofar, sin avisos & Sí \\
+Trazabilidad & Cada SOFA documenta su origen en \texttt{GLOBAL\_Comment} y la aplicación registra su resumen SHA-256 & Sí \\
+Reimplementaciones & Idénticas bit a bit a las herramientas originales (Tabla~\ref{tab:equivalencia}) & Sí \\
+Salidas de escucha & Cargadas y reproducidas en SPARTA y en HeSuVi & Sí \\
+\hline
+\end{tabular}
+\end{table}
+
+El prototipo cumple todas las comprobaciones: rechaza las capturas que no permiten simular, y de las aprobadas entrega archivos SOFA válidos, trazables y utilizables en reproductores de terceros. La única intervención del usuario es marcar los puntos anatómicos y escribir sus medidas.
+
+\subsubsection{Validez física}
+\label{subsubsec:res_validez}
+
+La Tabla~\ref{tab:res_validez} compara los rasgos de A~A y A~C con el rango de las 93 personas de HUTUBS.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Rasgos de las HRTF de A~A y A~C frente al rango de HUTUBS (percentiles 2,5 a 97,5)}
+\label{tab:res_validez}
+\begin{tabular}{p{0.34\linewidth}p{0.20\linewidth}p{0.16\linewidth}p{0.16\linewidth}}
+\hline
+Rasgo & HUTUBS & A~A & A~C \\
+\hline
+ITD a 90° ($\mu$s) & $-806$ a $-690$ & $-769$ & $-786$ \\
+ITD a 270° ($\mu$s) & 688 a 797 & 781 & \textbf{803} \\
+ITD máxima ($\mu$s) & 692 a 811 & 782 & 805 \\
+ILD a 90°, 1~kHz (dB) & 5,4 a 6,9 & 6,7 & \textbf{7,3} \\
+ILD a 90°, 2~kHz (dB) & 6,0 a 9,3 & 7,4 & 8,0 \\
+ILD a 90°, 4~kHz (dB) & 10,2 a 21,0 & 13,4 & 17,2 \\
+ILD a 90°, 8~kHz (dB) & 12,3 a 30,5 & 23,1 & 22,2 \\
+ILD a 90°, 16~kHz (dB) & 18,2 a 32,6 & 30,3 & \textbf{33,4} \\
+Nivel entre 150 y 450~Hz (dB) & 0,02 a 0,17 & 0,16 & 0,16 \\
+\hline
+\end{tabular}
+\end{table}
+
+Las dos HRTF se comportan como HRTF humanas: la ITD es de unos 780 a 800~$\mu$s con la fuente a un lado y de signo opuesto al otro, la ILD crece con la frecuencia, de unos 7~dB a 1~kHz a unos 30~dB a 16~kHz, como describe la teoría dúplex (Sección~\ref{subsubsec:duplex}), y el nivel a baja frecuencia queda a menos de 0,2~dB de 0~dB. A~A cumple el criterio en todos los rasgos. A~C lo incumple por poco en tres, la ITD a 270° (803 frente a un máximo de 797~$\mu$s) y la ILD a 1 y a 16~kHz, todos por encima del rango. Los tres son coherentes con su AID 2,3~mm mayor que la de A~A, es decir, con un error de escala entre capturas, y no con una HRTF de forma anómala.
+
+\subsubsection{Repetibilidad}
+\label{subsubsec:res_repetibilidad_eval}
+
+En el nivel espectral, la SD media entre A~C y A~A, ponderada por área, es de 2,53~dB en 4 a 11~kHz y de 4,19~dB en 12 a 16~kHz, con percentiles~95 de 5,09 y 9,29~dB. En la banda de la pina el valor coincide con el piso de ruido del barrido (2,5 a 2,7~dB, Tabla~\ref{tab:res_pisos}), que se había medido solo en la oreja izquierda y con el vector de diagnóstico; las dos orejas dan lo mismo (2,50 y 2,56~dB). La Fig.~\ref{fig:res_repetibilidad_sd} muestra que en 4 a 11~kHz la diferencia se reparte de forma bastante uniforme, mientras que en 12 a 16~kHz se concentra en elevaciones altas, entre $+25$° y $+50$°, y en las bajas, por debajo de $-45$°.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{Figs/eval_repetibilidad_sd.png}
+\caption{SD por dirección entre las HRTF de producción de A~C y A~A, media de las dos orejas, en (a)~4--11~kHz y (b)~12--16~kHz, sobre las 1\,850 direcciones de la rejilla \emph{Default}. Azimut 0° = frente y 90° = izquierda. Escala común de 0 a 10~dB; los valores que la exceden se saturan.}
+\label{fig:res_repetibilidad_sd}
+\end{figure}
+
+En el nivel binaural, el error absoluto medio de la ITD es de 10,8~$\mu$s, por debajo del umbral de 16~$\mu$s, con un máximo de 37,9~$\mu$s a azimut 305° y elevación 0°; el 20~\% de las direcciones supera el umbral. El error tiene el patrón de un cambio de escala: la ITD de A~C es mayor a los dos lados y casi igual en el plano medio. La predicción registrada se cumplió en el signo, pero no en la magnitud: la diferencia lateral fue de 20,1~$\mu$s a 90° y de 25,9~$\mu$s a 270°, por encima del tope de 20~$\mu$s, de modo que la predicción queda refutada. La diferencia es mayor de lo que explica la AID por sí sola, lo que apunta a diferencias de geometría o de marcado de los canales entre capturas.
+
+La ILD es repetible en las bandas bajas y deja de serlo en las altas (Tabla~\ref{tab:res_ild_rep}). Hasta 1,6~kHz el error medio es menor de 1~dB; desde 2~kHz lo supera, y entre 3 y 16~kHz es de 1,3 a 4,3~dB, con máximos de más de 10~dB. Es decir, en las frecuencias donde actúan la pina y el hombro, capturar dos veces a la misma persona cambia la ILD más que el umbral perceptual.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Error de ILD entre A~C y A~A por banda de tercio de octava}
+\label{tab:res_ild_rep}
+\begin{tabular}{cccc}
+\hline
+Banda (kHz) & Media $|e|$ (dB) & Máx. $|e|$ (dB) & Direcciones $> 1$~dB \\
+\hline
+1 & 0,31 & 1,05 & 0,4~\% \\
+2 & 1,04 & 6,13 & 42,3~\% \\
+4 & 2,88 & 10,61 & 95,9~\% \\
+8 & 2,38 & 13,21 & 73,8~\% \\
+16 & 4,33 & 25,83 & 81,2~\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Personalización}
+\label{subsubsec:res_personalizacion}
+
+La Tabla~\ref{tab:res_personalizacion} y la Fig.~\ref{fig:res_personalizacion} comparan la diferencia entre las dos capturas de A con la diferencia entre los 4\,278 pares de personas de HUTUBS.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Diferencia intra-sujeto (A~A frente a A~C) frente a la diferencia entre personas (pares de HUTUBS)}
+\label{tab:res_personalizacion}
+\begin{tabular}{p{0.20\linewidth}p{0.12\linewidth}p{0.26\linewidth}p{0.14\linewidth}p{0.14\linewidth}}
+\hline
+Métrica & Intra & Inter: mínimo\,/\,p5\,/\,mediana & Percentil de la intra & Criterio \\
+\hline
+SD 4--11~kHz & 2,53~dB & 3,78\,/\,4,72\,/\,5,97~dB & 0 & \textbf{Se cumple} \\
+SD 12--16~kHz & 4,19~dB & 5,01\,/\,6,33\,/\,7,86~dB & 0 & (descriptiva) \\
+$|e_{\mathrm{ITD}}|$ medio & 10,95~$\mu$s & 3,52\,/\,9,17\,/\,17,64~$\mu$s & 12 & No se cumple \\
+$|e_{\mathrm{ILD}}|$ medio & 2,10~dB & 1,48\,/\,2,00\,/\,2,46~dB & 10 & No se cumple \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{Figs/eval_personalizacion.png}
+\caption{Diferencia entre las dos capturas de A (línea continua) frente a la distribución de la diferencia entre los 4\,278 pares de personas de HUTUBS (barras), con su percentil~5 (línea discontinua): (a)~SD en 4--11~kHz, (b)~SD en 12--16~kHz, (c)~error absoluto medio de la ITD y (d)~error absoluto medio de la ILD en las bandas desde 1~kHz.}
+\label{fig:res_personalizacion}
+\end{figure}
+
+El criterio decisivo se cumple con holgura: en la banda de la pina, las dos capturas de A difieren 2,53~dB, menos que cualquiera de los 4\,278 pares de personas de HUTUBS, cuyo mínimo es de 3,78~dB. Lo mismo ocurre en 12 a 16~kHz. Es decir, el error que introduce la captura con celular en el espectro es menor que la diferencia entre dos personas, y la HRTF que entrega el prototipo conserva rasgos espectrales propios de la persona.
+
+Los criterios de ITD e ILD no se cumplen, aunque la intra queda en la parte baja de la distribución, en los percentiles 12 y 10. La ITD depende sobre todo del tamaño de la cabeza, y dos personas de tamaño parecido pueden tener ITD muy similares; el error de escala entre las dos capturas de A basta para igualar esa diferencia. En la ILD, la intra es comparable a la diferencia entre personas parecidas, en línea con la falta de repetibilidad en altas frecuencias de la Tabla~\ref{tab:res_ild_rep}.
+
+Como referencia, la persona de HUTUBS medida dos veces en cámara anecoica difiere 2,64~dB en SD de 4 a 11~kHz y 11,9~$\mu$s en ITD, frente a 2,53~dB y 10,95~$\mu$s entre las dos capturas de A. En el espectro y en la ITD, repetir la captura con celular cambia la HRTF tanto como repetir una medición acústica de laboratorio. La ILD es la excepción: 2,10~dB en A frente a 1,30~dB en la medición repetida.
+
+Estos resultados deben leerse con dos reservas. La primera, ya declarada en la metodología, es que las HRTF de A y las de HUTUBS provienen de geometrías y simulaciones distintas. La segunda es que las dos capturas de A tienen la concha poco profunda (Tabla~\ref{tab:capturas}); con menos detalle en la oreja, hay menos rasgos espectrales que puedan diferir entre capturas, lo que puede contribuir a una SD intra baja. La comparación con la medición repetida de HUTUBS, que no tiene esa limitación y da un valor similar, indica que este efecto no basta para explicar el resultado, pero no lo descarta.
