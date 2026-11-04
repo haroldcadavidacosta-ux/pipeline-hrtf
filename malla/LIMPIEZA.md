@@ -164,6 +164,18 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.442 y 0.602: 
      huecos). Si no, o si la malla ya termina por encima del plano, **se rechaza**: sin el
      corte estándar no es comparable con las demás. Queda en
      `informe["corte_cuello"]`.
+   - **Tolerancia** (`config.CORTE_CUELLO_TOLERANCIA_MM` = 2 mm, añadida el 2026-11-04,
+     **después de ver el caso**): si la malla termina por encima del plano a no más de eso,
+     se corta `MARGEN_FONDO_CUELLO_MM` (1 mm) por encima de su fondo, con las mismas
+     comprobaciones, y queda como aviso (no falla). El informe guarda `z_pedido_mm`,
+     `z_min_mm` y el `z_mm` real del corte. El 1 mm es porque Poisson redondea el fondo: en C1
+     la sección cortando 0,05 / 0,25 / 0,5 / 1 / 2 mm por encima del fondo da 17 246 /
+     18 446 / 18 991 / 19 505 / 19 702 mm²; a 1 mm ya está al 99 % de la del cuello.
+     - **Por qué**: C1 aprobaba con la escala de la mediana (termina en −135,5 mm), pero con
+       la escala bitragial (145 mm, factor 11,5 % menor) termina en −114,2 mm. Lo que le
+       falta es 0,8 mm de cuello, que no cambia la acústica; es el mismo escaneo.
+     - **Lo que no cambia**: con más de 2 mm sigue rechazada (A2 termina en −102 mm). Las
+       mallas que llegan a −115 se cortan igual que antes.
 
 ## Circunferencia: qué mide la malla y cómo medir con cinta
 
@@ -204,6 +216,7 @@ de pelo aplastado es ~1.1 % de escala), justo por encima de las cejas y de las o
 | C2 | rechazada (genus 8): el escaneo tiene una cavidad grande en la nuca y tela doblada |
 | A1, A3 | aprobadas y cortadas a −115 mm (A1 gracias a la tapa del cuello del paso 3). A tiene el hombro izquierdo a −92/−100 mm, a la altura del fin de la barbilla: el corte a −115 incluye un trozo de hombro |
 | A2 | rechazada: termina en −102 mm: la espalda sigue unida al cuello hasta −105 y el corte a −115 no se aplica |
+| C1 con escala bitragial (2026-11-04) | aprobada con la tolerancia del corte: termina en −114,2 mm y se corta en −113,2 mm |
 
 ## Pendiente / abierto
 

@@ -54,6 +54,8 @@ MARGEN_CUELLO = 0.02            # el corte del cuello queda justo por encima del
 CUELLO_MAS_BAJO = -1.6          # AID: hasta dónde se busca un plano limpio para la tapa del cuello
 PASO_CUELLO = 0.02              # AID: paso de esa búsqueda (~3 mm)
 BAJADA_CUELLO_MIN = 0.05        # AID (~7 mm): la tapa solo baja de la regla del borde si gana al menos esto
+MARGEN_FONDO_CUELLO_MM = 1.0    # si la malla no llega al corte (dentro de config.CORTE_CUELLO_TOLERANCIA_MM),
+                                # se corta así de arriba de su fondo: los 1–2 mm de abajo los redondea Poisson
 PROFUNDIDAD_POISSON = 10
 SIGMA_RELLENO = 0.08            # ancho del promedio gaussiano que pega el relleno a los datos
 SIGMA_CASCO = 0.08              # ancho del alisado del casco (~12 mm); 0 = no alisar
@@ -668,6 +670,10 @@ def control_calidad(informe):
     # terminó el escaneo), así que se rechaza. A2: la espalda quedó unida al cuello hasta
     # −105 mm y la malla terminaba en −102.
     corte = informe.get("corte_cuello")
+    if corte and corte["aplicado"] and "z_pedido_mm" in corte:
+        avisos.append(f"el escaneo termina en z = {corte['z_min_mm']} mm, por encima del corte estándar "
+                      f"({corte['z_pedido_mm']} mm) pero dentro de la tolerancia ({corte['tolerancia_mm']} mm): "
+                      f"se cortó en z = {corte['z_mm']:.1f} mm")
     if corte and not corte["aplicado"]:
         if "z_min_mm" in corte:
             fallas.append(f"el escaneo no llega al corte del cuello (z = {corte['z_mm']} mm): la malla termina en "
@@ -860,17 +866,23 @@ def comprobar_cerrada(V, F):
     return problemas
 
 
-def cortar_cuello(ruta: Path, z_mm: float):
+def cortar_cuello(ruta: Path, z_mm: float, tolerancia_mm: float = 0.0):
     """Corta la malla en mm con el plano z = z_mm (respecto del eje interaural) y la tapa.
+    Si la malla ya termina por encima del plano a no más de tolerancia_mm, se corta
+    MARGEN_FONDO_CUELLO_MM por encima de su fondo (el fondo de Poisson es redondeado).
     Solo se sobrescribe el archivo si el resultado queda cerrado y sano; si no, se deja
-    como estaba y el motivo queda en el informe (y como aviso en el control de calidad)."""
+    como estaba y el motivo queda en el informe (y como falla en el control de calidad)."""
     ms = pymeshlab.MeshSet()
     cargar(ms, ruta)
     V, F = ms.current_mesh().vertex_matrix(), ms.current_mesh().face_matrix()
     info = {"z_mm": z_mm, "aplicado": False}
-    if V[:, 2].min() >= z_mm:
-        return info | {"motivo": f"la malla ya termina por encima de z = {z_mm} mm",
-                       "z_min_mm": round(float(V[:, 2].min()), 1)}
+    z_min = float(V[:, 2].min())
+    if z_min >= z_mm:
+        if z_min - z_mm > tolerancia_mm:
+            return info | {"motivo": f"la malla ya termina por encima de z = {z_mm} mm",
+                           "z_min_mm": round(z_min, 1)}
+        info |= {"z_pedido_mm": z_mm, "z_min_mm": round(z_min, 1), "tolerancia_mm": tolerancia_mm}
+        z_mm = z_min + MARGEN_FONDO_CUELLO_MM
     arista = float(np.median(np.linalg.norm(V[F[:, 0]] - V[F[:, 1]], axis=1)))
     z = z_mm
     while np.any(V[:, 2] == z):                  # ningún vértice justo sobre el plano
@@ -961,7 +973,8 @@ def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: f
     informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm, orejas_mm, bitrago_mm)
     # el corte del cuello va en mm (config.CORTE_CUELLO_MM), así que solo hay corte si hay escala
     if informe["escala"]["factor"]:
-        informe["corte_cuello"] = cortar_cuello(salida / "malla_final_mm.ply", config.CORTE_CUELLO_MM)
+        informe["corte_cuello"] = cortar_cuello(salida / "malla_final_mm.ply", config.CORTE_CUELLO_MM,
+                                                config.CORTE_CUELLO_TOLERANCIA_MM)
     informe["control_calidad"] = control_calidad(informe)
     (salida / "informe_limpieza.json").write_text(json.dumps(informe, indent=2, default=int), encoding="utf-8")
     return informe

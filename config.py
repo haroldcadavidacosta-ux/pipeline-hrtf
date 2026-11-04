@@ -63,6 +63,10 @@ CARPETA_SOFA = "sofa"             # dentro de la carpeta del escaneo: la HRTF de
 
 # --- Geometría ------------------------------------------------------------
 CORTE_CUELLO_MM = -115.0          # respecto del eje interaural
+# Si la malla termina por encima del corte a no más de esto, se corta un poco más arriba (ver
+# malla/LIMPIEZA.md, paso 8) en vez de rechazarla. Decidido el 2026-11-04 con C1 (termina en
+# −114,2 mm con la escala bitragial), después de ver ese caso.
+CORTE_CUELLO_TOLERANCIA_MM = 2.0
 AID_MIN_MM, AID_MAX_MM = 120.0, 200.0
 
 # --- Estimadores ----------------------------------------------------------

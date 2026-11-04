@@ -358,14 +358,15 @@ def version_pipeline() -> str:
     return h.stdout.strip() + (" con cambios sin commit" if s.stdout.strip() else "")
 
 
-def comentario(informe: dict, gradado: dict) -> str:
-    """GLOBAL_Comment de los SOFA unidos: cómo se hizo esta HRTF."""
+def comentario(informe: dict, gradado: dict, z_corte_mm: float = config.CORTE_CUELLO_MM) -> str:
+    """GLOBAL_Comment de los SOFA unidos: cómo se hizo esta HRTF. z_corte_mm: donde se cortó el
+    cuello de verdad (puede quedar un poco por encima del estándar, ver malla/LIMPIEZA.md)."""
     p = gradado.get("parametros", {})
     lados = informe["lados"]
     n = lados["left"]["frecuencias"]
     it = max(l["iteraciones_max"] or 0 for l in lados.values())
     return (f"pipeline_hrtf ({informe['version_pipeline']}): escaneo de celular (KIRI Engine) limpiado y "
-            f"escalado, cuello cortado a {config.CORTE_CUELLO_MM:g} mm del eje interaural, gradado con "
+            f"escalado, cuello cortado a {z_corte_mm:.1f} mm del eje interaural, gradado con "
             f"hrtf_mesh_grading -x {p.get('x_mm')} -e {p.get('e_mm')} -y {p.get('y_mm')} (una malla por oreja), "
             f"exportado con Mesh2HRTF 1.3.0 (ML-FMM BEM, c = {config.EXPORTACION_MESH2HRTF['speedOfSound']} m/s). "
             f"NumCalc 2022-08-26 (sin -adapt_fmmlength). {n} frecuencias por oreja de "
@@ -477,7 +478,12 @@ def simular(carpeta: Path, registrar=print) -> dict:
     if informe["fallas"] or not archivos:
         return guardar_informe(carpeta, informe)
     informe["fin"] = ahora()
-    informe["sofa"] = {"carpeta": destino.name, "sha256": anotar(archivos, comentario(informe, gradado))}
+    try:
+        corte = json.loads((carpeta / "informe_limpieza.json").read_text(encoding="utf-8"))["corte_cuello"]
+        z_corte = corte["z_mm"]
+    except (FileNotFoundError, KeyError):
+        z_corte = config.CORTE_CUELLO_MM
+    informe["sofa"] = {"carpeta": destino.name, "sha256": anotar(archivos, comentario(informe, gradado, z_corte))}
     informe["avisos"] += figuras(destino, registrar)
     # para escuchar (no para métricas): la HRIR ecualizada al campo difuso y los WAV de HeSuVi
     try:

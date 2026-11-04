@@ -249,6 +249,48 @@ def carpeta_salida(ruta_malla: Path) -> Path:
     return Path(config.RUTA_DATOS) / "salidas" / ruta_malla.resolve().parent.name
 
 
+# Diálogos nativos de Windows para elegir la malla o la carpeta de resultados. Se abren con
+# PowerShell (Windows Forms) porque la app empaquetada no lleva tkinter; salen en el PC donde
+# corre la app, que es el mismo del navegador. La ruta inicial va por variable de entorno para
+# no tener que escapar comillas ni tildes, y la respuesta vuelve en UTF-8.
+_DIALOGO = """
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$dueno = New-Object System.Windows.Forms.Form -Property @{{TopMost = $true; ShowInTaskbar = $false}}
+{cuerpo}
+if ($d.ShowDialog($dueno) -eq [System.Windows.Forms.DialogResult]::OK) {{ {resultado} }}
+"""
+_ELEGIR_ARCHIVO = _DIALOGO.format(cuerpo="""$d = New-Object System.Windows.Forms.OpenFileDialog -Property @{
+    Title = 'Elegir la malla del escaneo'; InitialDirectory = $env:DIALOGO_INICIAL
+    Filter = 'Mallas 3D (*.obj;*.ply;*.stl)|*.obj;*.ply;*.stl|Todos los archivos (*.*)|*.*'}""",
+                                  resultado="$d.FileName")
+_ELEGIR_CARPETA = _DIALOGO.format(cuerpo="""$d = New-Object System.Windows.Forms.FolderBrowserDialog -Property @{
+    Description = 'Elegir la carpeta de resultados (con myHRTF_project_L y myHRTF_project_R)'
+    SelectedPath = $env:DIALOGO_INICIAL; ShowNewFolderButton = $false}""",
+                                  resultado="$d.SelectedPath")
+
+
+def elegir_con_dialogo(carpeta: bool, inicial: Path) -> Path | None:
+    """Abre el diálogo y devuelve lo elegido, o None si se cancela (o no hay PowerShell)."""
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command",
+                            _ELEGIR_CARPETA if carpeta else _ELEGIR_ARCHIVO],
+                           capture_output=True, env=os.environ | {"DIALOGO_INICIAL": str(inicial)},
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError:
+        return None
+    texto = r.stdout.decode("utf-8", errors="replace").strip()
+    return Path(texto) if texto else None
+
+
+def carpeta_existente(ruta: Path) -> Path:
+    """La carpeta existente más cercana a una ruta (para abrir el diálogo ahí)."""
+    for p in (ruta, *ruta.parents):
+        if p.is_dir():
+            return p
+    return Path(config.RUTA_DATOS)
+
+
 def comando_tarea(tarea: str) -> list[str]:
     """Cómo lanzar una tarea: en desarrollo, su script con el mismo Python; empaquetada,
     el propio .exe con el subcomando (no hay intérprete ni .py sueltos)."""
@@ -369,6 +411,8 @@ class AppPipeline:
                     self.entrada_ruta = ui.input("Ruta de la malla (.obj, .ply o .stl)",
                                                  value=str(RUTA_POR_DEFECTO)) \
                         .props("dense outlined").classes("flex-grow")
+                    ui.button("Elegir archivo…", icon="folder_open", on_click=self.elegir_malla) \
+                        .props("outline no-caps")
                     self.boton_cargar = ui.button("Cargar", icon="upload_file", on_click=self.cargar) \
                         .props("unelevated no-caps")
                 self.boton_puntos_guardados = ui.button("Usar los puntos guardados", icon="history",
@@ -447,10 +491,13 @@ class AppPipeline:
                 self.aviso_herramienta(ESTADO_NUMCALC, "NumCalc")
                 ui.label("Simula las dos orejas (tarda horas), verifica que cada frecuencia convergió y "
                          f"deja la HRTF en {CARPETA_SOFA}. Si se corta, al relanzarla se conserva lo "
-                         "ya simulado.").classes("tenue text-sm")
-                self.entrada_simulacion = ui.input("Carpeta de resultados (con los proyectos exportados)",
-                                                   on_change=lambda _: self.refrescar()) \
-                    .props("dense outlined").classes("w-full")
+                         "ya simulado. Para retomar otra carpeta, elígela o escribe su ruta.").classes("tenue text-sm")
+                with ui.row().classes("w-full items-end no-wrap gap-2"):
+                    self.entrada_simulacion = ui.input("Carpeta de resultados (con los proyectos exportados)",
+                                                       on_change=lambda _: self.refrescar()) \
+                        .props("dense outlined").classes("flex-grow")
+                    ui.button("Elegir carpeta…", icon="folder_open", on_click=self.elegir_carpeta_simulacion) \
+                        .props("outline no-caps")
                 with ui.row().classes("items-center gap-3"):
                     self.boton_simular = ui.button("Simular y armar la HRTF", icon="play_arrow",
                                                    on_click=self.simular).props("unelevated no-caps")
@@ -820,6 +867,24 @@ class AppPipeline:
         ui.notify(f"{len(self.puntos)} puntos recuperados.")
 
     # --- manejadores: carga y guardado -------------------------------------------
+    async def elegir_malla(self) -> None:
+        """Diálogo de Windows para la malla; al elegirla se carga."""
+        if not self.puede_editar():
+            return
+        actual = Path(self.entrada_ruta.value.strip().strip('"') or config.RUTA_DATOS)
+        inicial = carpeta_existente(actual if actual.suffix == "" else actual.parent)
+        ruta = await run.io_bound(elegir_con_dialogo, False, inicial)
+        if ruta is not None:
+            self.entrada_ruta.value = str(ruta)
+            await self.cargar()
+
+    async def elegir_carpeta_simulacion(self) -> None:
+        """Diálogo de Windows para la carpeta de resultados que se va a simular."""
+        actual = self.carpeta_simulacion() or Path(config.RUTA_DATOS) / "salidas"
+        ruta = await run.io_bound(elegir_con_dialogo, True, carpeta_existente(actual))
+        if ruta is not None:
+            self.entrada_simulacion.value = str(ruta)          # dispara refrescar()
+
     async def cargar(self) -> None:
         if not self.puede_editar():
             return
@@ -1129,6 +1194,9 @@ if __name__ == "__main__":
          "exportar": exportar_malla.principal, "simular": simular_malla.principal,
          "hesuvi": exportar_hesuvi.principal}[sys.argv[1]](sys.argv[2:])
     else:
+        # las carpetas de datos existen desde el primer arranque (en un PC nuevo no hay nada)
+        for sub in ("entrada", "salidas"):
+            (Path(config.RUTA_DATOS) / sub).mkdir(parents=True, exist_ok=True)
         ESTADO_BINARIO = comprobar_binario()
         print(("Gradado: " if ESTADO_BINARIO[0] else "AVISO, el gradado no va a funcionar: ")
               + ESTADO_BINARIO[1])
