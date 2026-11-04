@@ -24,7 +24,7 @@ orejas en SOFA. Todo corre desde una app (`app.py`); el usuario solo necesita la
 | 5. Exportación a Mesh2HRTF | `exportar_malla.py` | `malla/exportacion.py` + `mesh2hrtf_1.3.0/` (necesita Blender) |
 | 6–7. Simulación y HRTF en SOFA | `simular_malla.py` o `simular.bat` | `malla/simulacion.py` + `numcalc/` |
 | Para escuchar (DTF, HeSuVi) | `exportar_hesuvi.py` | `malla/dtf.py`, `malla/hesuvi.py` |
-| Evaluación (ITD, ILD) | — | `metricas/` (por hacer) |
+| Evaluación (SD, ITD, ILD) | `evaluacion_prototipo.py` | `metricas/` |
 
 ## Reglas
 
@@ -34,3 +34,17 @@ orejas en SOFA. Todo corre desde una app (`app.py`); el usuario solo necesita la
   (no se sube).
 - Al repositorio va código, nunca datos: `datos/` está en el `.gitignore`.
 - Intérprete: `.venv\Scripts\python.exe` (Windows).
+
+## Licencia
+
+El código propio del proyecto se distribuye bajo la licencia MIT (`LICENSE`). Los programas
+de terceros que se incluyen conservan sus licencias:
+
+| Carpeta | Programa | Licencia |
+|---|---|---|
+| `grading/` | `hrtf_mesh_grading` (TU Berlin) | MIT (`grading/LICENSE_hrtf_mesh_grading.txt`) |
+| `numcalc/` | NumCalc, de Mesh2HRTF, binario de mesh2hrtf-tools del 26/08/2022 | LGPL v3 o posterior (`numcalc/COPYING.LESSER` y `numcalc/COPYING`); código fuente en https://github.com/Any2HRTF/Mesh2HRTF |
+| `mesh2hrtf_1.3.0/` | Exportador de Mesh2HRTF 1.3.0 | EUPL 1.2 (`mesh2hrtf_1.3.0/LICENSE.txt`) |
+| `grading/`, `numcalc/` | DLL de MSYS2 | BSD de 3 cláusulas |
+
+Los datos de los participantes (mallas, fotografías y HRTF) no se publican.
