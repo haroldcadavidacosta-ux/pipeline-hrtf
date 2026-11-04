@@ -144,6 +144,54 @@ acercan ni se alejan). Ajustada, sin apretar: cada milímetro de holgura cambia 
 *Protocolo provisional: falta validarlo con medidas reales (ver malla/LIMPIEZA.md).*
 """
 
+# Aspecto: modo oscuro con la paleta de Quasar ajustada y unas pocas clases propias
+COLORES = dict(primary="#5b8cff", secondary="#8b6cff", accent="#2ec4a6", positive="#34c37a",
+               negative="#f0605d", warning="#f5a524", info="#5b8cff", dark="#161a22")
+CSS = """
+body { background: #0f1218; }
+.encabezado { background: #161a22 !important; border-bottom: 1px solid #262c38; }
+.tarjeta { background: #161a22 !important; border: 1px solid #262c38; border-radius: 14px; box-shadow: none; }
+.q-stepper--vertical .q-stepper__tab { padding-top: 14px; padding-bottom: 14px; }
+.tenue { color: #8b94a8; }
+.instruccion { color: #9cb8ff; }
+.registro { background: #0b0e13 !important; color: #c9d1d9; font-family: Consolas, monospace;
+            font-size: 12px; border-radius: 8px; border: 1px solid #222833; }
+.visor-vacio { width: 640px; height: 480px; border-radius: 10px; background: #1b2029;
+               display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.dato { background: #1b2029; border-radius: 8px; padding: 6px 10px; }
+.punto { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+"""
+FONDO_VISOR = "#1b2029"
+ANCHO_VISOR, ALTO_VISOR = 640, 480
+
+
+def ruta_corta(ruta) -> str:
+    """La ruta desde la carpeta que contiene datos/ (p. ej. datos/salidas/C3), o solo el nombre."""
+    ruta = Path(ruta)
+    try:
+        return ruta.resolve().relative_to(Path(config.RUTA_DATOS).resolve().parent).as_posix()
+    except ValueError:
+        return ruta.name
+
+
+def veredicto(texto: str, bien: bool) -> None:
+    with ui.row().classes("items-center gap-2 mt-2"):
+        ui.icon("check_circle" if bien else "cancel", color="positive" if bien else "negative") \
+            .classes("text-3xl")
+        ui.label(texto).classes("text-xl font-semibold " + ("text-positive" if bien else "text-negative"))
+
+
+def fallas_y_avisos(fallas: list[str], avisos: list[str]) -> None:
+    for falla in fallas:
+        ui.label(f"✖ {falla}").classes("text-negative text-sm")
+    for aviso in avisos:
+        ui.label(f"⚠ {aviso}").classes("text-warning text-sm")
+
+
+def dato(texto: str) -> None:
+    ui.label(texto).classes("dato text-sm")
+
+
 # El visor carga las mallas desde una URL, así que se sirve una carpeta temporal con
 # copias en STL (three.js no lee .obj ni .ply directamente).
 DIR_VISOR = Path(tempfile.mkdtemp(prefix="pipeline_hrtf_"))
@@ -260,116 +308,161 @@ class AppPipeline:
 
     # --- interfaz -----------------------------------------------------------
     def construir_interfaz(self) -> None:
-        ui.label("Pipeline HRTF: del escaneo a la HRTF").classes("text-2xl")
-
-        ui.label("1. Malla y puntos").classes("text-xl mt-4")
-        with ui.row().classes("w-full items-end"):
-            self.entrada_ruta = ui.input("Ruta de la malla (.obj, .ply o .stl)",
-                                         value=str(RUTA_POR_DEFECTO)).classes("flex-grow")
-            self.boton_cargar = ui.button("Cargar", on_click=self.cargar)
-        self.boton_puntos_guardados = ui.button("Usar los puntos guardados",
-                                                on_click=self.usar_puntos_guardados)
-        self.boton_puntos_guardados.set_visibility(False)
-
-        self.info_malla = ui.label("Ninguna malla cargada.")
-        self.instruccion = ui.label("").classes("text-lg font-bold")
-
-        with ui.row().classes("items-center"):
-            ui.label("Vista:")
-            for nombre in VISTAS:
-                ui.button(nombre, on_click=lambda nombre=nombre: self.mover_camara(nombre))
-            self.nota_ejes = ui.label("")
-        with ui.row().classes("items-center"):
-            ui.label("Mostrar:")
-            self.selector_mallas = ui.row()
-            self.boton_textura = ui.button("Ver relieve", on_click=self.alternar_textura)
-            self.boton_textura.set_visibility(False)
-            self.etiqueta_vista = ui.label("")
-        ui.label("Arrastra para girar, rueda para acercar, DOBLE CLIC para marcar.")
-
-        self.contenedor_escena = ui.column()
-
-        with ui.row():
-            self.boton_deshacer = ui.button("Deshacer", on_click=self.deshacer)
-            self.boton_reiniciar = ui.button("Empezar de nuevo", on_click=self.reiniciar)
-        self.lista_puntos = ui.column()
-        self.resultados_alineacion = ui.column()
-        self.boton_guardar = ui.button("Guardar alineación y puntos", on_click=self.guardar)
-
-        ui.label("2. Medidas de la persona (opcionales) y limpieza").classes("text-xl mt-4")
-        with ui.expansion("Cómo medir").classes("w-full"):
-            ui.markdown(INSTRUCCIONES_MEDIDAS)
-        def en_mm(rango):
-            lo, hi = rango
-            return {f"En milímetros (entre {lo} y {hi})": lambda v: v is None or lo <= v <= hi}
-        with ui.row():
-            self.campo_oreja_izq = ui.number("Largo oreja izquierda", placeholder="p. ej. 63", suffix="mm",
-                                             validation=en_mm(RANGO_OREJA_MM))
-            self.campo_oreja_der = ui.number("Largo oreja derecha", placeholder="p. ej. 63", suffix="mm",
-                                             validation=en_mm(RANGO_OREJA_MM))
-            self.campo_circ = ui.number("Circunferencia de la cabeza", placeholder="p. ej. 570", suffix="mm",
-                                        validation=en_mm(RANGO_CIRCUNFERENCIA_MM))
-            self.campo_bitrago = ui.number("Ancho bitragial (pie de rey)", placeholder="p. ej. 148",
-                                           suffix="mm", validation=en_mm(RANGO_BITRAGO_MM))
-        with ui.row().classes("items-center"):
-            self.boton_limpiar = ui.button("Limpiar malla", on_click=self.limpiar)
-            self.spinner = ui.spinner(size="lg")
-            self.spinner.set_visibility(False)
-            self.estado_limpieza = ui.label("")
-        self.registro = ui.log(max_lines=300).classes("w-full h-40")
-
-        ui.label("3. Resultado").classes("text-xl mt-4")
-        self.resultado = ui.column()
-
-        ui.label("4. Gradado para Mesh2HRTF").classes("text-xl mt-4")
-        bien, mensaje = ESTADO_BINARIO
-        ui.label(("Programa de gradado listo: " if bien else "ERROR, el gradado no va a funcionar: ")
-                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
-        ui.label("Necesita la limpieza aprobada y con alguna medida (malla en mm). Deja "
-                 f"{', '.join(SALIDAS_GRADADO.values())} en la carpeta de resultados.")
-        with ui.row().classes("items-center"):
-            self.boton_gradar = ui.button("Gradar malla (izquierda y derecha)", on_click=self.gradar)
-            self.spinner_gradado = ui.spinner(size="lg")
-            self.spinner_gradado.set_visibility(False)
-            self.estado_gradado = ui.label("")
-        self.registro_gradado = ui.log(max_lines=100).classes("w-full h-32")
-        self.resultado_gradado = ui.column()
-
-        ui.label("5. Exportación a Mesh2HRTF").classes("text-xl mt-4")
-        bien, mensaje = ESTADO_BLENDER
-        ui.label(("Blender encontrado: " if bien else "ERROR, la exportación no va a funcionar: ")
-                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
-        ui.label("Necesita el gradado aprobado. Deja "
-                 f"{' y '.join(config.PROYECTOS_MESH2HRTF.values())} (listos para NumCalc) en la "
-                 "carpeta de resultados. Un proyecto que ya tenga resultados de NumCalc no se sobrescribe.")
-        with ui.row().classes("items-center"):
-            self.boton_exportar = ui.button("Exportar proyectos (izquierda y derecha)", on_click=self.exportar)
-            self.spinner_exportacion = ui.spinner(size="lg")
-            self.spinner_exportacion.set_visibility(False)
-            self.estado_exportacion = ui.label("")
-        self.registro_exportacion = ui.log(max_lines=100).classes("w-full h-32")
-        self.resultado_exportacion = ui.column()
-
-        ui.label("6. Simulación con NumCalc y HRTF").classes("text-xl mt-4")
-        bien, mensaje = ESTADO_NUMCALC
-        ui.label(("NumCalc listo: " if bien else "ERROR, la simulación no va a funcionar: ")
-                 + mensaje).classes("text-green-700" if bien else "text-red-700 font-bold")
-        ui.label("Necesita la exportación aprobada en la carpeta de resultados. Simula las dos orejas "
-                 "(tarda horas), verifica que cada frecuencia convergió y deja la HRTF de las dos "
-                 f"orejas en {CARPETA_SOFA}. Se puede cortar y volver a lanzar: lo ya simulado se "
-                 "conserva. Para retomar otra carpeta, escribe su ruta.")
-        with ui.row().classes("w-full items-end"):
-            self.entrada_simulacion = ui.input("Carpeta de resultados (con los proyectos exportados)",
-                                               on_change=lambda _: self.refrescar()).classes("flex-grow")
-        with ui.row().classes("items-center"):
-            self.boton_simular = ui.button("Simular y armar la HRTF", on_click=self.simular)
-            self.spinner_simulacion = ui.spinner(size="lg")
-            self.spinner_simulacion.set_visibility(False)
-            self.estado_simulacion = ui.label("")
-        self.registro_simulacion = ui.log(max_lines=500).classes("w-full h-48")
-        self.resultado_simulacion = ui.column()
+        self.construir_encabezado()
+        with ui.row().classes("w-full items-start gap-5 p-5"):
+            self.construir_visor()
+            with ui.column().classes("flex-1 gap-4").style("min-width: 420px"):
+                self.construir_pasos()
         ui.timer(0.25, self.seguir_camara)
         self.refrescar()
+
+    def construir_encabezado(self) -> None:
+        with ui.header().classes("items-center justify-between px-6 py-3 encabezado"):
+            with ui.row().classes("items-center gap-3"):
+                ui.icon("hearing", color="primary").classes("text-3xl")
+                with ui.column().classes("gap-0"):
+                    ui.label("Pipeline HRTF").classes("text-lg font-semibold")
+                    ui.label("Del escaneo de la cabeza a la HRTF individual en SOFA").classes("text-xs tenue")
+            with ui.row().classes("items-center gap-2"):
+                for nombre, (bien, mensaje) in (("Gradado", ESTADO_BINARIO), ("Blender", ESTADO_BLENDER),
+                                                ("NumCalc", ESTADO_NUMCALC)):
+                    with ui.chip(nombre, icon="check_circle" if bien else "error",
+                                 color="positive" if bien else "negative").props("outline dense"):
+                        ui.tooltip(mensaje)
+
+    def construir_visor(self) -> None:
+        with ui.card().classes("tarjeta p-5 gap-3").style(f"width: {ANCHO_VISOR + 42}px"):
+            self.instruccion = ui.label("Carga una malla para empezar.").classes("text-base font-medium instruccion")
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Vista").classes("tenue text-sm w-16")
+                with ui.button_group().props("flat"):
+                    for nombre in VISTAS:
+                        ui.button(nombre, on_click=lambda nombre=nombre: self.mover_camara(nombre)) \
+                            .props("flat dense no-caps")
+                self.nota_ejes = ui.label("").classes("tenue text-xs")
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Mostrar").classes("tenue text-sm w-16")
+                self.selector_mallas = ui.row().classes("gap-1")
+                self.boton_textura = ui.button("Ver relieve", icon="texture", on_click=self.alternar_textura) \
+                    .props("flat dense no-caps color=accent")
+                self.boton_textura.set_visibility(False)
+                self.etiqueta_vista = ui.label("").classes("tenue text-xs")
+            self.contenedor_escena = ui.column()
+            with self.contenedor_escena:
+                with ui.element("div").classes("visor-vacio"):
+                    ui.icon("view_in_ar").classes("text-6xl tenue")
+                    ui.label("Aquí aparece la malla").classes("tenue")
+            ui.label("Arrastra para girar  ·  rueda para acercar  ·  doble clic para marcar") \
+                .classes("tenue text-xs")
+
+    def construir_pasos(self) -> None:
+        self.stepper = ui.stepper().props("vertical header-nav animated flat").classes("w-full tarjeta")
+        with self.stepper:
+            with ui.step("puntos", title="1 · Malla y puntos", icon="ads_click") as self.paso_puntos:
+                with ui.row().classes("w-full items-end no-wrap gap-2"):
+                    self.entrada_ruta = ui.input("Ruta de la malla (.obj, .ply o .stl)",
+                                                 value=str(RUTA_POR_DEFECTO)) \
+                        .props("dense outlined").classes("flex-grow")
+                    self.boton_cargar = ui.button("Cargar", icon="upload_file", on_click=self.cargar) \
+                        .props("unelevated no-caps")
+                self.boton_puntos_guardados = ui.button("Usar los puntos guardados", icon="history",
+                                                        on_click=self.usar_puntos_guardados) \
+                    .props("flat no-caps")
+                self.boton_puntos_guardados.set_visibility(False)
+                self.info_malla = ui.label("Ninguna malla cargada.").classes("tenue text-sm")
+                self.lista_puntos = ui.column().classes("w-full gap-1")
+                self.resultados_alineacion = ui.column().classes("w-full gap-1")
+                with ui.row().classes("gap-2 mt-2"):
+                    self.boton_deshacer = ui.button("Deshacer", icon="undo", on_click=self.deshacer) \
+                        .props("flat no-caps")
+                    self.boton_reiniciar = ui.button("Empezar de nuevo", icon="restart_alt",
+                                                     on_click=self.reiniciar).props("flat no-caps")
+                    self.boton_guardar = ui.button("Guardar puntos", icon="save", on_click=self.guardar) \
+                        .props("unelevated no-caps")
+
+            with ui.step("limpieza", title="2–3 · Medidas, limpieza, escala y corte",
+                         icon="cleaning_services") as self.paso_limpieza:
+                with ui.expansion("Cómo medir", icon="help_outline").classes("w-full ayuda"):
+                    ui.markdown(INSTRUCCIONES_MEDIDAS).classes("text-sm")
+
+                def en_mm(rango):
+                    lo, hi = rango
+                    return {f"En milímetros (entre {lo} y {hi})": lambda v: v is None or lo <= v <= hi}
+                with ui.grid(columns=2).classes("w-full gap-3"):
+                    self.campo_oreja_izq = ui.number("Largo oreja izquierda", placeholder="p. ej. 63", suffix="mm",
+                                                     validation=en_mm(RANGO_OREJA_MM)).props("dense outlined")
+                    self.campo_oreja_der = ui.number("Largo oreja derecha", placeholder="p. ej. 63", suffix="mm",
+                                                     validation=en_mm(RANGO_OREJA_MM)).props("dense outlined")
+                    self.campo_circ = ui.number("Circunferencia de la cabeza", placeholder="p. ej. 570",
+                                                suffix="mm", validation=en_mm(RANGO_CIRCUNFERENCIA_MM)) \
+                        .props("dense outlined")
+                    self.campo_bitrago = ui.number("Ancho bitragial (opcional)", placeholder="p. ej. 148",
+                                                   suffix="mm", validation=en_mm(RANGO_BITRAGO_MM)) \
+                        .props("dense outlined")
+                with ui.row().classes("items-center gap-3"):
+                    self.boton_limpiar = ui.button("Limpiar malla", icon="auto_fix_high", on_click=self.limpiar) \
+                        .props("unelevated no-caps")
+                    self.spinner = ui.spinner(size="md", color="primary")
+                    self.spinner.set_visibility(False)
+                    self.estado_limpieza = ui.label("").classes("tenue text-sm")
+                with ui.expansion("Registro", icon="terminal").classes("w-full"):
+                    self.registro = ui.log(max_lines=300).classes("w-full h-40 registro")
+                self.resultado = ui.column().classes("w-full gap-1")
+
+            with ui.step("gradado", title="4 · Gradado", icon="grid_on") as self.paso_gradado:
+                self.aviso_herramienta(ESTADO_BINARIO, "el programa de gradado")
+                ui.label("Una malla por oreja, fina en la oreja que se simula y gruesa lejos de ella. "
+                         "Necesita la limpieza aprobada y en milímetros.").classes("tenue text-sm")
+                with ui.row().classes("items-center gap-3"):
+                    self.boton_gradar = ui.button("Gradar las dos orejas", icon="grid_on", on_click=self.gradar) \
+                        .props("unelevated no-caps")
+                    self.spinner_gradado = ui.spinner(size="md", color="primary")
+                    self.spinner_gradado.set_visibility(False)
+                    self.estado_gradado = ui.label("").classes("tenue text-sm")
+                with ui.expansion("Registro", icon="terminal").classes("w-full"):
+                    self.registro_gradado = ui.log(max_lines=100).classes("w-full h-32 registro")
+                self.resultado_gradado = ui.column().classes("w-full gap-1")
+
+            with ui.step("exportacion", title="5 · Exportación a Mesh2HRTF", icon="output") as self.paso_exportacion:
+                self.aviso_herramienta(ESTADO_BLENDER, "Blender")
+                ui.label("Un proyecto de Mesh2HRTF por oreja, listo para NumCalc. Un proyecto que ya tenga "
+                         "resultados no se sobrescribe.").classes("tenue text-sm")
+                with ui.row().classes("items-center gap-3"):
+                    self.boton_exportar = ui.button("Exportar los dos proyectos", icon="output",
+                                                    on_click=self.exportar).props("unelevated no-caps")
+                    self.spinner_exportacion = ui.spinner(size="md", color="primary")
+                    self.spinner_exportacion.set_visibility(False)
+                    self.estado_exportacion = ui.label("").classes("tenue text-sm")
+                with ui.expansion("Registro", icon="terminal").classes("w-full"):
+                    self.registro_exportacion = ui.log(max_lines=100).classes("w-full h-32 registro")
+                self.resultado_exportacion = ui.column().classes("w-full gap-1")
+
+            with ui.step("simulacion", title="6–7 · Simulación y HRTF", icon="graphic_eq") as self.paso_simulacion:
+                self.aviso_herramienta(ESTADO_NUMCALC, "NumCalc")
+                ui.label("Simula las dos orejas (tarda horas), verifica que cada frecuencia convergió y "
+                         f"deja la HRTF en {CARPETA_SOFA}. Si se corta, al relanzarla se conserva lo "
+                         "ya simulado.").classes("tenue text-sm")
+                self.entrada_simulacion = ui.input("Carpeta de resultados (con los proyectos exportados)",
+                                                   on_change=lambda _: self.refrescar()) \
+                    .props("dense outlined").classes("w-full")
+                with ui.row().classes("items-center gap-3"):
+                    self.boton_simular = ui.button("Simular y armar la HRTF", icon="play_arrow",
+                                                   on_click=self.simular).props("unelevated no-caps")
+                    self.spinner_simulacion = ui.spinner(size="md", color="primary")
+                    self.spinner_simulacion.set_visibility(False)
+                    self.estado_simulacion = ui.label("").classes("tenue text-sm")
+                with ui.expansion("Registro", icon="terminal").classes("w-full"):
+                    self.registro_simulacion = ui.log(max_lines=500).classes("w-full h-48 registro")
+                self.resultado_simulacion = ui.column().classes("w-full gap-1")
+
+    def aviso_herramienta(self, estado: tuple[bool, str], nombre: str) -> None:
+        bien, mensaje = estado
+        if not bien:
+            ui.label(f"No se encontró {nombre}: {mensaje}").classes("text-negative text-sm font-medium")
+
+    def continuar(self, paso: str, texto: str) -> None:
+        ui.button(texto, icon="arrow_downward", on_click=lambda: self.stepper.set_value(paso)) \
+            .props("flat no-caps color=primary")
 
     def R_vista(self) -> np.ndarray:
         """Rotación de ejes anatómicos a ejes del visor. En el escaneo original sin
@@ -447,8 +540,9 @@ class AppPipeline:
         self.contenedor_escena.clear()
         camara = ui.scene.perspective_camera(fov=60, near=diag / 1000, far=diag * 50)
         with self.contenedor_escena:
-            with ui.scene(width=1000, height=650, grid=False, camera=camara,
-                          on_click=self.al_doble_clic, click_events=["dblclick"]) as escena:
+            with ui.scene(width=ANCHO_VISOR, height=ALTO_VISOR, grid=False, camera=camara,
+                          on_click=self.al_doble_clic, click_events=["dblclick"],
+                          background_color=FONDO_VISOR).classes("rounded-lg") as escena:
                 self.capas = []
                 for archivo in archivos:
                     es_textura = archivo.suffix == ".glb"
@@ -516,17 +610,18 @@ class AppPipeline:
     def refrescar_selector(self) -> None:
         self.selector_mallas.clear()
         with self.selector_mallas:
-            ui.button("Original", on_click=self.mostrar_original)
+            ui.button("Original", on_click=self.mostrar_original).props("flat dense no-caps")
             if self.salida is not None:
                 for archivo, etiqueta in MALLAS_LIMPIEZA:
                     if (self.salida / archivo).exists():
-                        ui.button(etiqueta, on_click=lambda a=archivo, e=etiqueta: self.mostrar_salida(a, e))
+                        ui.button(etiqueta, on_click=lambda a=archivo, e=etiqueta: self.mostrar_salida(a, e)) \
+                            .props("flat dense no-caps")
 
     def refrescar(self) -> None:
         """Actualiza instrucción, lista de puntos, alineación y botones según el estado."""
         n = len(self.puntos)
         if self.malla is None:
-            self.instruccion.set_text("")
+            self.instruccion.set_text("Carga una malla para empezar.")
         elif n < N_OBLIGATORIOS:
             self.instruccion.set_text(
                 f"Punto {n + 1} de {N_OBLIGATORIOS}: doble clic sobre {LANDMARKS[n][1]}.")
@@ -540,9 +635,12 @@ class AppPipeline:
 
         self.lista_puntos.clear()
         with self.lista_puntos:
-            for p in self.puntos:
-                texto = next(t for k, t, _ in LANDMARKS if k == p["clave"])
-                ui.label(f"- {texto}: vértice {p['indice']} en {np.round(p['xyz'], 3)}")
+            for i, p in enumerate(self.puntos, 1):
+                texto, color = next((t, c) for k, t, c in LANDMARKS if k == p["clave"])
+                with ui.row().classes("items-center gap-2 no-wrap"):
+                    ui.element("span").classes("punto").style(f"background: {color}")
+                    ui.label(f"{i}. {texto[0].upper()}{texto[1:]}").classes("text-sm")
+                    ui.label(f"vértice {p['indice']}").classes("tenue text-xs")
 
         self.resultados_alineacion.clear()
         self.T = None
@@ -553,27 +651,30 @@ class AppPipeline:
             vmin, vmax = self.caja_original
             d = vmax - vmin
             with self.resultados_alineacion:
-                ui.label(f"AID (distancia interaural): {self.aid:.4f}").classes("text-lg")
-                ui.label(f"Caja envolvente original: {d[0]:.3f} x {d[1]:.3f} x {d[2]:.3f} "
-                         "(si mide ~200 está en mm; si ~0,2, en metros; KIRI da escala arbitraria)")
-                ui.label(f"Residuo del alineado: {self.residuo:.2e}")
+                ui.label("Medidas en la malla (unidades de KIRI)").classes("tenue text-xs mt-2")
                 puntos = {p["clave"]: p["xyz"] for p in self.puntos}
-                for lado, (arriba, abajo) in PUNTOS_LARGO.items():
-                    if arriba in puntos and abajo in puntos:
-                        largo = float(np.linalg.norm(puntos[arriba] - puntos[abajo]))
-                        ui.label(f"Largo de la oreja {lado} en la malla: {largo:.4f} "
-                                 f"({largo / self.aid:.3f} AID)")
-                        z_arriba, z_abajo = aplicar_transformacion(self.T, [puntos[arriba], puntos[abajo]])[:, 2]
-                        if z_arriba <= z_abajo:
-                            ui.label(f"AVISO: en la oreja {lado} el punto ALTO quedó por debajo del BAJO. "
-                                     "¿Se marcaron al revés o lejos de los extremos? Deshacer y volver "
-                                     "a marcar.").classes("text-orange-700")
-                if TRAGO_IZQ in puntos and TRAGO_DER in puntos:
-                    ancho = float(np.linalg.norm(puntos[TRAGO_IZQ] - puntos[TRAGO_DER]))
-                    ui.label(f"Ancho bitragial en la malla: {ancho:.4f} ({ancho / self.aid:.3f} AID)")
+                avisos = []
+                with ui.row().classes("gap-2"):
+                    dato(f"AID {self.aid:.4f}")
+                    dato(f"Caja {d[0]:.3f} × {d[1]:.3f} × {d[2]:.3f}")
+                    dato(f"Residuo {self.residuo:.1e}")
+                    for lado, (arriba, abajo) in PUNTOS_LARGO.items():
+                        if arriba in puntos and abajo in puntos:
+                            largo = float(np.linalg.norm(puntos[arriba] - puntos[abajo]))
+                            dato(f"Oreja {lado} {largo:.4f} ({largo / self.aid:.3f} AID)")
+                            z_arriba, z_abajo = aplicar_transformacion(self.T, [puntos[arriba], puntos[abajo]])[:, 2]
+                            if z_arriba <= z_abajo:
+                                avisos.append(f"En la oreja {lado} el punto ALTO quedó por debajo del BAJO. "
+                                              "¿Se marcaron al revés o lejos de los extremos? Deshacer y "
+                                              "volver a marcar.")
+                    if TRAGO_IZQ in puntos and TRAGO_DER in puntos:
+                        ancho = float(np.linalg.norm(puntos[TRAGO_IZQ] - puntos[TRAGO_DER]))
+                        dato(f"Bitragial {ancho:.4f} ({ancho / self.aid:.3f} AID)")
+                for aviso in avisos:
+                    ui.label(f"⚠ {aviso}").classes("text-warning text-sm")
                 if self.residuo > RESIDUO_MAX:
-                    ui.label(f"ERROR: residuo mayor que {RESIDUO_MAX:.0e}, hay un fallo en la "
-                             "matriz. No se puede guardar.").classes("text-red-700 font-bold")
+                    ui.label(f"✖ Residuo mayor que {RESIDUO_MAX:.0e}: hay un fallo en la matriz. "
+                             "No se puede guardar.").classes("text-negative text-sm font-medium")
 
         self.nota_ejes.set_text("(ejes anatómicos)" if self.T is not None else
                                 "(ejes supuestos del archivo hasta marcar los 3 primeros puntos)")
@@ -591,6 +692,15 @@ class AppPipeline:
         self.boton_exportar.set_enabled(se_puede_exportar and not ocupado)
         self.boton_simular.set_enabled(ESTADO_NUMCALC[0] and self.exportacion_aprobada() and not ocupado)
         self.entrada_simulacion.set_enabled(not ocupado)
+        # pasos completados en el stepper
+        for paso, hecho in ((self.paso_puntos, self.guardado),
+                            (self.paso_limpieza, bool(self.informe and self.informe["control_calidad"]["aprobado"])),
+                            (self.paso_gradado, bool(self.informe_gradado and self.informe_gradado["aprobado"])),
+                            (self.paso_exportacion, self.exportacion_aprobada())):
+            if hecho:
+                paso.props("done")
+            else:
+                paso.props(remove="done")
 
     def carpeta_simulacion(self) -> Path | None:
         texto = (self.entrada_simulacion.value or "").strip().strip('"')
@@ -785,6 +895,7 @@ class AppPipeline:
         self.boton_puntos_guardados.set_visibility(True)
         ui.notify(f"Guardado: {salida_malla.name} y {self.ruta_json.name}", type="positive")
         self.refrescar()
+        self.stepper.set_value("limpieza")
 
     # --- manejadores: limpieza y gradado ----------------------------------------
     async def correr_tarea(self, tarea: str, argumentos: list[str], registro: ui.log) -> int:
@@ -841,7 +952,7 @@ class AppPipeline:
             self.estado_limpieza.set_text("La limpieza falló: ver el registro.")
             self.refrescar()
             return
-        self.estado_limpieza.set_text(f"Terminada. Archivos en {salida}")
+        self.estado_limpieza.set_text(f"Terminada. Archivos en {ruta_corta(salida)}")
         self.salida, self.informe = salida, informe
         self.mostrar_resultado()
         self.refrescar_selector()
@@ -866,19 +977,16 @@ class AppPipeline:
             self.refrescar()
             return
         self.informe_gradado = informe
-        self.estado_gradado.set_text(f"Terminado. Archivos en {self.salida}")
+        self.estado_gradado.set_text(f"Terminado. Archivos en {ruta_corta(self.salida)}")
         with self.resultado_gradado:
+            veredicto("Gradado aprobado" if informe["aprobado"] else "Gradado fallido", informe["aprobado"])
+            fallas_y_avisos(informe["fallas"], informe["avisos"])
+            with ui.row().classes("gap-2"):
+                for lado, r in informe["lados"].items():
+                    if "caras" in r:
+                        dato(f"{'Izquierda' if lado == 'left' else 'Derecha'}: {r['caras']:,} caras, {r['segundos']} s")
             if informe["aprobado"]:
-                ui.label("GRADADO OK").classes("text-2xl font-bold text-green-700")
-            else:
-                ui.label("GRADADO FALLIDO").classes("text-2xl font-bold text-red-700")
-            for falla in informe["fallas"]:
-                ui.label(f"✖ {falla}").classes("text-red-700")
-            for aviso in informe["avisos"]:
-                ui.label(f"⚠ {aviso}").classes("text-orange-700")
-            for lado, r in informe["lados"].items():
-                if "caras" in r:
-                    ui.label(f"{r['archivo']}: {r['caras']:,} caras, {r['segundos']} s")
+                self.continuar("exportacion", "Continuar con la exportación")
         for archivo in SALIDAS_GRADADO.values():   # el visor puede tener una versión anterior
             anterior = self.cache_visor.pop(self.salida / archivo, None)
             if anterior is not None:
@@ -903,23 +1011,18 @@ class AppPipeline:
             self.estado_exportacion.set_text("La exportación falló: ver el registro.")
             self.refrescar()
             return
-        self.estado_exportacion.set_text(f"Terminada. Proyectos en {self.salida}")
+        self.estado_exportacion.set_text(f"Terminada. Proyectos en {ruta_corta(self.salida)}")
         if informe["aprobado"]:
             self.entrada_simulacion.set_value(str(self.salida))
         with self.resultado_exportacion:
-            if informe["aprobado"]:
-                ui.label("EXPORTACIÓN OK").classes("text-2xl font-bold text-green-700")
-            else:
-                ui.label("EXPORTACIÓN FALLIDA").classes("text-2xl font-bold text-red-700")
-            for falla in informe["fallas"]:
-                ui.label(f"✖ {falla}").classes("text-red-700")
-            for aviso in informe["avisos"]:
-                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+            veredicto("Exportación aprobada" if informe["aprobado"] else "Exportación fallida", informe["aprobado"])
+            fallas_y_avisos(informe["fallas"], informe["avisos"])
             for r in informe["lados"].values():
                 if "fuente_distancia_canal_mm" in r:
-                    ui.label(f"{r['proyecto']}: {r['nodos']:,} nodos, {r['elementos']:,} elementos, "
-                             f"fuente ({r['sourceType']}) a {r['fuente_distancia_canal_mm']} mm del canal "
-                             f"marcado, {r['frecuencias']} frecuencias")
+                    dato(f"{r['proyecto']}: {r['nodos']:,} nodos, {r['elementos']:,} elementos, fuente a "
+                         f"{r['fuente_distancia_canal_mm']} mm del canal marcado, {r['frecuencias']} frecuencias")
+            if informe["aprobado"]:
+                self.continuar("simulacion", "Continuar con la simulación")
         self.refrescar()
 
     async def simular(self) -> None:
@@ -939,12 +1042,12 @@ class AppPipeline:
                                             "Se puede volver a lanzar.")
             self.refrescar()
             return
-        self.estado_simulacion.set_text(f"Terminada. Resultados en {carpeta}")
+        self.estado_simulacion.set_text(f"Terminada. Resultados en {ruta_corta(carpeta)}")
         with self.resultado_simulacion:
             if informe["aprobado"]:
-                ui.label("HRTF LISTA").classes("text-2xl font-bold text-green-700")
-                ui.label(f"Archivos en {carpeta / informe['sofa']['carpeta']}: "
-                         + ", ".join(informe["sofa"]["sha256"]))
+                veredicto("HRTF lista", True)
+                ui.label(f"Archivos en {ruta_corta(carpeta / informe['sofa']['carpeta'])}: "
+                         + ", ".join(informe["sofa"]["sha256"])).classes("text-sm")
                 if informe.get("dtf"):
                     ui.label("Para escuchar con programas que cargan SOFA (timbre neutro): "
                              + ", ".join(informe["dtf"]) + ". Para métricas, usar los SOFA sin ecualizar")
@@ -953,14 +1056,11 @@ class AppPipeline:
                              + ", ".join(informe["hesuvi"]["archivos"])
                              + ". Recomendado: HeSuVi_DTF_48000.wav")
             else:
-                ui.label("SIMULACIÓN FALLIDA").classes("text-2xl font-bold text-red-700")
-            for falla in informe["fallas"]:
-                ui.label(f"✖ {falla}").classes("text-red-700")
-            for aviso in informe["avisos"]:
-                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+                veredicto("Simulación fallida", False)
+            fallas_y_avisos(informe["fallas"], informe["avisos"])
             for r in informe["lados"].values():
                 c = r["convergencia"]
-                ui.label(f"{r['proyecto']}: {c['convergieron']}/{c['pasos']} frecuencias convergieron "
+                dato(f"{r['proyecto']}: {c['convergieron']}/{c['pasos']} frecuencias convergieron "
                          f"({r['de_hz']:.0f}–{r['a_hz']:.0f} Hz), {r['horas_suma_por_frecuencia']} h de cálculo"
                          + (f", RAM pico {r['pico_ram_suma_numcalc_gb']} GB" if "pico_ram_suma_numcalc_gb" in r else ""))
         self.refrescar()
@@ -969,44 +1069,44 @@ class AppPipeline:
         inf, cc = self.informe, self.informe["control_calidad"]
         self.resultado.clear()
         with self.resultado:
-            if cc["aprobado"]:
-                ui.label("APROBADA").classes("text-3xl font-bold text-green-700")
-            else:
-                ui.label("RECHAZADA: hay que repetir el escaneo").classes("text-3xl font-bold text-red-700")
-            for falla in cc["fallas"]:
-                ui.label(f"✖ {falla}").classes("text-red-700")
-            for aviso in cc["avisos"]:
-                ui.label(f"⚠ {aviso}").classes("text-orange-700")
+            veredicto("Malla aprobada" if cc["aprobado"] else "Malla rechazada: hay que repetir el escaneo",
+                      cc["aprobado"])
+            fallas_y_avisos(cc["fallas"], cc["avisos"])
 
             esc = inf["escala"]
-            ui.label("Escala").classes("text-lg font-bold mt-2")
+            ui.label("Escala").classes("text-base font-semibold mt-3")
             if esc["factor"]:
-                ui.label(f"Fuente: {esc['fuente']}  ·  factor {esc['factor']:.3f} mm por unidad")
-                partes = [f"AID {esc['aid_mm']} mm", f"circunferencia en la malla {esc['circunferencia_mm']} mm"]
-                partes += [f"oreja {lado} {mm} mm" for lado, mm in esc.get("largo_oreja_mm", {}).items()]
-                if "bitrago_mm" in esc:
-                    partes.append(f"bitragial {esc['bitrago_mm']} mm")
-                ui.label("Con esa escala: " + "  ·  ".join(partes))
+                ui.label(f"Fuente: {esc['fuente']}  ·  factor {esc['factor']:.3f} mm por unidad").classes("text-sm")
+                with ui.row().classes("gap-2"):
+                    dato(f"AID {esc['aid_mm']} mm")
+                    dato(f"Circunferencia {esc['circunferencia_mm']} mm")
+                    for lado, mm in esc.get("largo_oreja_mm", {}).items():
+                        dato(f"Oreja {lado} {mm} mm")
+                    if "bitrago_mm" in esc:
+                        dato(f"Bitragial {esc['bitrago_mm']} mm")
                 for fuente, dif in esc.get("discrepancias", {}).items():
-                    ui.label(f"{fuente}: se aparta un {100 * dif:.1f} % de la escala usada")
-                if esc.get("discrepancias"):
-                    ui.label("(Umbral de discrepancia aún sin fijar: falta validar con medidas "
-                             "reales.)").classes("text-gray-600")
+                    ui.label(f"{fuente.replace('_', ' ').capitalize()}: se aparta un {100 * dif:.1f} % "
+                             "de la escala usada").classes("tenue text-sm")
             else:
-                ui.label("Sin escala real: no se dio ninguna medida.")
+                ui.label("Sin escala real: no se dio ninguna medida.").classes("text-sm")
 
             final = inf.get("suavizada") or inf["cerrada_poisson"]
-            ui.label("Malla final").classes("text-lg font-bold mt-2")
-            ui.label(f"{final['faces_number']:,} caras  ·  {final['connected_components_number']} pieza(s)  ·  "
-                     f"genus {final['genus']}  ·  {final['boundary_edges']} aristas de borde  ·  "
-                     f"{final['caras_autointersecadas']} caras autointersecadas")
-            for lado, o in inf.get("oreja", {}).items():
-                ui.label(f"Oreja {lado}: concha de {o['profundidad_concha_AID']} AID de profundidad, "
-                         f"facetado {o['facetado_grados']}°")
+            ui.label("Malla final").classes("text-base font-semibold mt-3")
+            with ui.row().classes("gap-2"):
+                dato(f"{final['faces_number']:,} caras")
+                dato(f"{final['connected_components_number']} pieza(s)")
+                dato(f"genus {final['genus']}")
+                dato(f"{final['boundary_edges']} aristas de borde")
+                dato(f"{final['caras_autointersecadas']} autointersecciones")
+            if cc["aprobado"]:
+                self.continuar("gradado", "Continuar con el gradado")
 
 
 def principal() -> None:
     """Función raíz: NiceGUI la llama una vez por cada página que se abre."""
+    ui.dark_mode(True)
+    ui.colors(**COLORES)
+    ui.add_css(CSS)
     AppPipeline()
 
 
