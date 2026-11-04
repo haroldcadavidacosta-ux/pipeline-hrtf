@@ -24,8 +24,9 @@ app y `gradar_malla.py` lo encuentran solos en esta carpeta (no hay que configur
   malla movida ~0.0001 mm: con A1 eso dejaba al programa terminando sin remallar
   (código 0 y "Faces after" = "before"), así que ahora un intento solo cuenta si de verdad
   bajó el número de caras. Quizá la versión de 2024 no tenga este error.
-- Licencias: el programa, MIT (`LICENSE_hrtf_mesh_grading.txt`); las DLL de MSYS2,
-  BSD de 3 cláusulas.
+- Licencias: el programa, MIT (`LICENSE_hrtf_mesh_grading.txt`); `libpmp.dll` (pmp-library),
+  MIT; el runtime de GCC (`libgcc_s_seh-1`, `libstdc++-6`), GPL-3 con la excepción de runtime
+  de GCC; `libwinpthread-1`, MIT/BSD. Textos en `licencias/`; resumen en `AVISOS_DE_TERCEROS.md`.
 - Si se usa, citar: T. Palm, S. Koch, F. Brinkmann y M. Alexa, "Curvature-adaptive mesh
   grading for numerical approximation of head-related transfer functions", DAGA 2021,
   Viena, pp. 1111-1114.

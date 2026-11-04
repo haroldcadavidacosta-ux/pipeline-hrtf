@@ -3,7 +3,7 @@
 > Paso a paso completo, desde cero, para dos personas trabajando juntas.
 > Al terminar tendrán: un repositorio compartido, el entorno funcionando en las dos
 > máquinas, y la primera pieza del pipeline —marcar tres puntos sobre la malla y
-> alinearla— probada sobre la cabeza de C.
+> alinearla— probada sobre la cabeza de C1.
 >
 > Tiempo estimado: una tarde entre los dos.
 
@@ -19,7 +19,7 @@ Fase 3   Entorno de Python y paquetes                       cada uno, 10 min
 Fase 4   Comprobar que Streamlit funciona                   cada uno, 5 min
 Fase 5   EL SPIKE: ¿llegan los clics 3D?                    cada uno, 5 min  ← crítico
 Fase 6   La app de alineación                               uno de los dos
-Fase 7   Probarla con la malla de C                    quien la escribió
+Fase 7   Probarla con la malla de C1                    quien la escribió
 Fase 8   La rutina de trabajo diaria                        los dos
 ```
 
@@ -241,7 +241,7 @@ repositorio, así que cada uno pone las suyas:
 RUTA_DATOS = r"C:\Users\TuUsuario\Documents\PROYECTO DE GRADO\pipeline_hrtf\datos"
 BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 MESH2HRTF_PATH = r"C:\Users\TuUsuario\Documents\PROYECTO DE GRADO\Mesh2HRTF\Mesh2HRTF-1.3.0\mesh2hrtf"
-GRADING_EXE = r"C:\Users\TuUsuario\Documents\PROYECTO DE GRADO\Mesh2HRTF\mesh2hrtf-tools-C\bin\hrtf_mesh_grading.exe"
+GRADING_EXE = r"C:\Users\TuUsuario\Documents\PROYECTO DE GRADO\Mesh2HRTF\mesh2hrtf-tools\bin\hrtf_mesh_grading.exe"
 ```
 
 **3.4 — Crear las carpetas de datos** y copiar ahí `3Dmesh_orig.stl`:
@@ -439,7 +439,7 @@ Las cinco comprobaciones:
    milímetros. Si mide 0,2, está en metros. Es el primer dato real sobre la escala.
 2. **Que se pueda girar y acercar a la oreja.** Rueda del ratón para zoom,
    arrastrar para girar.
-3. **El AID de C.** Es un número que todavía no tienen.
+3. **El AID de C1.** Es un número que todavía no tienen.
 4. **El residuo.** Debe salir del orden de 1e-15. Si sale grande, hay un error en
    la matriz.
 5. **Abrir el `_alineada.ply` en MeshLab** y comprobar a ojo que la cabeza está

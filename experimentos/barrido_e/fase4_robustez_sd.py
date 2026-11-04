@@ -25,6 +25,7 @@ import sofar as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fase3_analisis as F    # noqa: E402
+import config                 # noqa: E402
 
 B = F.BARRIDO
 SALIDA = B / "fase4"
@@ -57,7 +58,7 @@ def principal() -> None:
     barrido["1_y5"] = sd(ref, leer(B / "fase2_y5" / "e_1_y5"))
     pisos = {}
     for e in ("2", "1", "0.5"):
-        a, c = B / f"fase4_e{e}" / f"e_A1_{e}", B / f"fase4_e{e}" / f"e_A3_{e}"
+        a, c = (B / f"fase4_e{e}" / f"e_{config.condicion_barrido(x, e)}" for x in ("A1", "A3"))
         if (a / "Output2HRTF" / "HRTF_Default.sofa").exists() and (c / "Output2HRTF" / "HRTF_Default.sofa").exists():
             pisos[e] = sd(leer(a), leer(c))
     valor = lambda e: float(e.split("_")[0])

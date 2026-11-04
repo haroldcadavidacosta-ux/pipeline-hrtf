@@ -49,24 +49,28 @@ RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ))
 from malla.convergencia import leer_salida   # noqa: E402
 from malla.gradado import sin_ventanas_de_error          # noqa: E402
+import config                                            # noqa: E402
 
 BARRIDO = RAIZ / "datos" / "experimentos" / "barrido_e"
 REGISTRO_SHA = BARRIDO / "fase1" / "sha256.json"
+# Fase 4 (participante A): sus capturas A1 y A3 a cada -e. El nombre de cada condición (y de su
+# carpeta e_<condición>) sale de config.condicion_barrido
+FASE4 = {c: {e: config.condicion_barrido(c, e) for e in ("2", "0.5", "1")} for c in ("A1", "A3")}
+CAPTURA_FASE4 = {cond: c for c, por_e in FASE4.items() for cond in por_e.values()}
 TANDAS = {"1": ["1", "0.5"], "2": ["3", "2"], "y5": ["1_y5"],
-          "j2": ["A1_2", "A3_2"], "j05": ["A1_0.5", "A3_0.5"],   # fase 4: repetibilidad (A)
-          "j1": ["A1_1", "A3_1"]}                                       # fase 4: par y réplica a -e 1
+          "j2": [FASE4["A1"]["2"], FASE4["A3"]["2"]], "j05": [FASE4["A1"]["0.5"], FASE4["A3"]["0.5"]],  # fase 4: repetibilidad (A)
+          "j1": [FASE4["A1"]["1"], FASE4["A3"]["1"]]}                                                    # fase 4: par y réplica a -e 1
 # Condiciones sueltas: su propia carpeta de salida, para que sus NaN no toquen los SOFA de las cuatro
 SALIDA_TANDA = {"y5": "fase2_y5", "j2": "fase4_e2", "j05": "fase4_e0.5", "j1": "fase4_e1"}
 # Condiciones fuera del sellado de la fase 1: su SHA-256 quedó en preparacion.json al prepararlas
 PREPARACION = {"1_y5": BARRIDO / "e_1_y5" / "preparacion.json"} | {
-    c: BARRIDO / f"e_{c}" / "preparacion.json"
-    for c in ("A1_2", "A3_2", "A1_0.5", "A3_0.5", "A1_1", "A3_1")}
+    c: BARRIDO / f"e_{c}" / "preparacion.json" for c in CAPTURA_FASE4}
 ORDEN_SECO = ["1", "0.5", "3", "2"]
 FRECUENCIAS_SECO = [900.0, 12000.0]
 # Tope de frecuencia por condición (fase 4, registrado antes de simular en
 # fase4_sujeto_A_2026-10-05.md): por encima, NumCalc pide más RAM de la que tiene el equipo
 # (A1 -e 0,5: 11-15 GB desde 19,2 kHz; 11,8 GB disponibles). La regla usa 4-14 kHz.
-TOPE_HZ = {"A1_0.5": 18900.0, "A3_0.5": 18900.0}
+TOPE_HZ = {FASE4["A1"]["0.5"]: 18900.0, FASE4["A3"]["0.5"]: 18900.0}
 
 # Presupuesto estimado (h) con el piloto: ajuste potencial del tiempo por frecuencia y, para
 # manage_numcalc, una emulación de su planificador con 11,7 GB libres y 12 núcleos.
@@ -75,7 +79,7 @@ ESTIMADO_H = {"3": {"en_serie": 3.3, "manage_numcalc": 0.6}, "2": {"en_serie": 3
               # -e 1 -y 5: interpolado por caras entre -e 1 (3,32 h) y -e 0,5 (6,05 h) reales de la fase 2
               "1_y5": {"en_serie": None, "manage_numcalc": 4.3}}
 # fase 4 (A): las mismas de B para cada -e (las mallas tienen un tamaño parecido)
-ESTIMADO_H |= {f"A{x}_{e}": ESTIMADO_H[e] for x in ("A", "C") for e in ("2", "0.5", "1")}
+ESTIMADO_H |= {cond: ESTIMADO_H[e] for por_e in FASE4.values() for e, cond in por_e.items()}
 
 MARGEN_RAM = 1.0             # factor de seguridad sobre la estimación de NumCalc. manage_numcalc
                              # usa 1.05, pero con todo cerrado este equipo deja 11,0-11,3 GB libres y
@@ -720,8 +724,8 @@ def escribir_sofas(salida: Path, prog: Progreso, log: Registro) -> dict:
                 sofa.Data_Imag[..., idx] = np.nan
             detalle = "; ".join(f"{x:.0f} Hz (no convergio en -e {', '.join(nan[x])})" for x in sorted(nan)) or "ninguna"
             sofa.GLOBAL_Title = f"DIAGNOSTICO barrido -e {e} (NO es una HRTF valida)"
-            sujeto = (f"prueba de repetibilidad (fase 4), sujeto A, captura {e[4]}, gradado {comando_gradado(e)}, "
-                      "oreja izquierda" if e.startswith("A") else
+            sujeto = (f"prueba de repetibilidad (fase 4), sujeto A, captura {CAPTURA_FASE4[e]}, gradado {comando_gradado(e)}, "
+                      "oreja izquierda" if e in CAPTURA_FASE4 else
                       f"condicion de control {comando_gradado(e)}, oreja izquierda (B)")
             sofa.GLOBAL_Comment = (
                 f"DIAGNOSTICO, no es una HRTF valida. Barrido de -e, {sujeto}, fuera de las cuatro condiciones "

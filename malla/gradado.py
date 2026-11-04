@@ -129,7 +129,7 @@ def gradar_lado(carpeta: Path, lado: str, archivo: str, registrar) -> tuple[subp
     queda anotado en el informe.
     Devuelve el último resultado y cuántos reintentos hicieron falta."""
     def correr(entrada: str) -> subprocess.CompletedProcess:
-        # nombres relativos a la carpeta: el programa no abre rutas con tildes ("Prueba á")
+        # nombres relativos a la carpeta: el programa no abre rutas con tildes (p. ej. "Begoña")
         return ejecutar(["-x", str(config.GRADING_X_MM), "-e", str(config.GRADING_E_MM), "-y", str(config.GRADING_Y_MM),
                          "-s", lado, "-v", "-i", entrada, "-o", archivo], carpeta, TIEMPO_MAX_S)
 

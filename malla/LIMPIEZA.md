@@ -33,12 +33,12 @@ Código de salida 0 = aprobada, 1 = hay que repetir el escaneo.
 
 Todo trabaja en el sistema alineado (+x adelante, +y izquierda, +z arriba, origen
 interaural) y **todas las distancias están en fracciones del AID**, porque KIRI entrega
-cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
+cada escaneo con una escala arbitraria (la misma persona dio AID 0.442 y 0.602: `C1` y `C2`).
 
 ## Pasos y por qué
 
 1. **Piezas flotantes → quedarse con la componente conexa más grande.** `Remove isolated
-   pieces wrt diameter` con el 10 % por defecto NO sirve: en C la pieza suelta más
+   pieces wrt diameter` con el 10 % por defecto NO sirve: en C1 la pieza suelta más
    grande medía el 25 % del diámetro de la malla.
 2. **La "cresta" no es una aleta delgada: es una carpa** que KIRI inventa sobre la
    coronilla que el celular no vio (la textura ahí es del fondo). Se ajusta un elipsoide
@@ -64,7 +64,7 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
      un anillo completo. Si queda al menos `BAJADA_CUELLO_MIN` por debajo de la regla del
      borde, la tapa va en ese plano y a Poisson solo entra el trozo de la cabeza
      (`cabeza_sobre_plano`); los trozos sueltos, como esa espalda, quedan fuera. Si no, se
-     usa la regla del borde tal cual. En los escaneos aprobados antes (C, B,
+     usa la regla del borde tal cual. En los escaneos aprobados antes (C1, B,
      D, E1) la búsqueda cae a menos de 0,02 AID de la regla del borde, así
      que siguen exactamente igual. Queda en `informe["tapa_cuello"]` (`regla`, `z_AID`).
    - **Lo que no arregla:** si la espalda sigue unida al cuello por encima del corte (A
@@ -80,7 +80,7 @@ cada escaneo con una escala arbitraria (la misma persona dio AID 0.438 y 0.602).
    intacto al gradado, que lo toma por curvatura y lo llena de elementos. 10 pasadas de
    HC Laplaciano en toda la cabeza con la misma protección de las orejas (0 dentro de
    0.30 AID, entrada gradual hasta 0.45).
-   - C, gradado izquierdo (`-x 0.5 -y 10`): 47 378 → 39 104 caras; solo la cara
+   - C1, gradado izquierdo (`-x 0.5 -y 10`): 47 378 → 39 104 caras; solo la cara
      14 688 → 9 365. Mueve < 1 mm el 99 % de la cara (máx. ~3 mm, en los pelos de las
      cejas), la punta de la nariz 0.6 mm, volumen −0.17 %. Métricas de oreja idénticas.
    - **Probado y descartado**: Taubin (×10–×100) se queda corto (−5 %); el de dos pasos
@@ -200,7 +200,7 @@ de pelo aplastado es ~1.1 % de escala), justo por encima de las cejas y de las o
 
 | Sujeto | Resultado |
 |---|---|
-| C, D, E1, B | aprobadas |
+| C1, D, E1, B | aprobadas |
 | C2 | rechazada (genus 8): el escaneo tiene una cavidad grande en la nuca y tela doblada |
 | A1, A3 | aprobadas y cortadas a −115 mm (A1 gracias a la tapa del cuello del paso 3). A tiene el hombro izquierdo a −92/−100 mm, a la altura del fin de la barbilla: el corte a −115 incluye un trozo de hombro |
 | A2 | rechazada: termina en −102 mm: la espalda sigue unida al cuello hasta −105 y el corte a −115 no se aplica |

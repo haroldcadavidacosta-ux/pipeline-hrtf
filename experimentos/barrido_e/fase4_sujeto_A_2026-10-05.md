@@ -5,7 +5,7 @@ al repositorio para que la fecha del commit lo certifique.
 
 ## El cambio
 
-La prueba de repetibilidad se hará con **A**, no con B. No es posible contactar a B ni a C para
+La prueba de repetibilidad se hará con **A**, no con B. No es posible contactar a B ni a C1 para
 repetir capturas. Los escaneos de E no sirven: quedaron mal hechos.
 
 El protocolo no cambia. Ya decía «escanear dos veces seguidas al mismo sujeto», sin nombrar a B: lo que se mide
@@ -27,7 +27,7 @@ limitación.
    Una captura rechazada en la limpieza se repite; no se sustituye por otra de otro día.
 3. Simular las dos con el protocolo del barrido: vector de diagnóstico (900 Hz a 24 kHz cada 300 Hz), oreja
    izquierda, el mismo NumCalc de 2022, convergencia leída de NC*.out.
-4. Tomar una captura como referencia de la otra (la primera, A, como referencia de la segunda, B) y medir dos pisos
+4. Tomar una captura como referencia de la otra (la primera como referencia de la segunda) y medir dos pisos
    de ruido con el mismo código de la fase 3: la SD media en 4–11 kHz y la fracción de muescas que sobreviven, con
    el mismo criterio de muesca.
 
@@ -48,13 +48,13 @@ Valores del barrido en B, frente a -e 0,5:
 
 ## Réplica opcional
 
-Si hay tiempo, simular también la captura A de A con -e 1 y compararla con su -e 0,5. Si la SD de 4–11 kHz se
+Si hay tiempo, simular también la captura A1 con -e 1 y compararla con su -e 0,5. Si la SD de 4–11 kHz se
 parece a la de B (1,01 dB), el barrido se generaliza a una segunda cabeza y el supuesto de arriba pierde peso.
 No cambia la regla de decisión; solo se reporta.
 
 ## Elección del par (2026-10-05, antes de simular)
 
-Se hicieron tres capturas seguidas de A (A, B, C). El criterio para elegir el par es solo que la malla sea válida
+Se hicieron tres capturas seguidas de A (A1, A2, A3). El criterio para elegir el par es solo que la malla sea válida
 con la misma regla del barrido; no depende de ningún resultado acústico:
 
 | Captura | Limpieza | Corte del cuello a −115 mm (el de B) |
@@ -119,7 +119,7 @@ Se calcula con `fase4_replica.py` (validado: con los datos de B reproduce la tab
 `fase4_analisis.py 1`. Los datos de A a -e 2 y a -e 0,5 ya están simulados, pero la comparación entre ellos
 **no se ha calculado** antes de escribir estas predicciones.
 
-**Predicciones**, para cada captura (A y C), contra su propia versión a -e 0,5:
+**Predicciones**, para cada captura (A1 y A3), contra su propia versión a -e 0,5:
 
 | # | Qué | Predicción | Si no se cumple |
 |---|---|---|---|
@@ -127,7 +127,7 @@ Se calcula con `fase4_replica.py` (validado: con los datos de B reproduce la tab
 | R2 | -e 1: corrimiento mediano de la muesca | \|mediana\| ≤ 50 Hz (B: −4 Hz) | -e 1 también sesga las muescas |
 | R3 | -e 2: corrimiento mediano de la muesca | mayor que +40 Hz, hacia arriba (B: +87 Hz) | el sesgo de -e 2 era propio de B |
 | R4 | -e 2: SD en 4–11 kHz | entre 1,0 y 2,0 dB (B: 1,44) | el costo de -e 2 depende de la cabeza |
-| R5 | Par A–C a -e 1: SD en 4–11 kHz (descriptivo) | entre 2,4 y 2,9 dB (pisos medidos: 2,54 a -e 2, 2,69 a -e 0,5) | — |
+| R5 | Par A1–A3 a -e 1: SD en 4–11 kHz (descriptivo) | entre 2,4 y 2,9 dB (pisos medidos: 2,54 a -e 2, 2,69 a -e 0,5) | — |
 
 **Cómo pesa en la decisión de producción.** Si R2 y R3 se cumplen en las dos capturas, el sesgo sistemático de
 -e 2 en las muescas, que -e 1 no tiene, se repite en una segunda cabeza, y eso respalda recomendar -e 1 -y 5 para
@@ -142,11 +142,11 @@ Informes: `fase4/informe_replica.md`, `fase4/informe_e1.md`, `fase4/informe_robu
 
 | # | Predicción | A1 | A3 | ¿Se cumple? |
 |---|---|---|---|---|
-| R1 | -e 1: SD 4–11 kHz entre 0,7 y 1,4 dB | 0,91 dB | 0,59 dB | A sí; C no (por debajo: cuesta menos de lo previsto) |
-| R2 | -e 1: \|corrimiento mediano\| ≤ 50 Hz | +49 Hz [7, 145] | +22 Hz [8, 50] | sí (A en el límite) |
+| R1 | -e 1: SD 4–11 kHz entre 0,7 y 1,4 dB | 0,91 dB | 0,59 dB | A1 sí; A3 no (por debajo: cuesta menos de lo previsto) |
+| R2 | -e 1: \|corrimiento mediano\| ≤ 50 Hz | +49 Hz [7, 145] | +22 Hz [8, 50] | sí (A1 en el límite) |
 | R3 | -e 2: corrimiento mediano > +40 Hz | +165 Hz [41, 390] | +88 Hz [41, 155] | sí |
 | R4 | -e 2: SD 4–11 kHz entre 1,0 y 2,0 dB | 1,79 dB | 1,04 dB | sí |
-| R5 | Piso A–C a -e 1 entre 2,4 y 2,9 dB | 2,63 dB | | sí |
+| R5 | Piso A1–A3 a -e 1 entre 2,4 y 2,9 dB | 2,63 dB | | sí |
 
 - **El sesgo de -e 2 en las muescas se repite en una segunda cabeza** (+165 y +88 Hz; B +87 Hz), y en A
   pierde más muescas (33 % y 21 %; B 16 %).

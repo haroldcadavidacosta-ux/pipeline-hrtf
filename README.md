@@ -37,14 +37,15 @@ orejas en SOFA. Todo corre desde una app (`app.py`); el usuario solo necesita la
 
 ## Licencia
 
-El código propio del proyecto se distribuye bajo la licencia MIT (`LICENSE`). Los programas
-de terceros que se incluyen conservan sus licencias:
+GPL-3.0 o posterior ([LICENSE](LICENSE)). La app empaquetada incluye pymeshlab (GPL-3), así
+que el proyecto entero tiene que distribuirse bajo GPL-3 y con su código fuente.
 
-| Carpeta | Programa | Licencia |
-|---|---|---|
-| `grading/` | `hrtf_mesh_grading` (TU Berlin) | MIT (`grading/LICENSE_hrtf_mesh_grading.txt`) |
-| `numcalc/` | NumCalc, de Mesh2HRTF, binario de mesh2hrtf-tools del 26/08/2022 | LGPL v3 o posterior (`numcalc/COPYING.LESSER` y `numcalc/COPYING`); código fuente en https://github.com/Any2HRTF/Mesh2HRTF |
-| `mesh2hrtf_1.3.0/` | Exportador de Mesh2HRTF 1.3.0 | EUPL 1.2 (`mesh2hrtf_1.3.0/LICENSE.txt`) |
-| `grading/`, `numcalc/` | DLL de MSYS2 | BSD de 3 cláusulas |
+La licencia, la versión y el código fuente de cada componente de terceros (Mesh2HRTF, NumCalc,
+hrtf_mesh_grading, Qt, Python, etc.) están en [AVISOS_DE_TERCEROS.md](AVISOS_DE_TERCEROS.md),
+junto con las citas que piden sus autores. Los textos completos están en [licencias/](licencias/).
+
+Al empaquetar, `pipeline_hrtf.spec` llama a `licencias/generar_avisos.py`, que deja junto al
+`.exe` la licencia, los avisos, los textos y `codigo_fuente_pipeline_hrtf.zip`. Para repartir la
+app, se reparte la carpeta `dist\pipeline_hrtf\` entera, con esos archivos.
 
 Los datos de los participantes (mallas, fotografías y HRTF) no se publican.

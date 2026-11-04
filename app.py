@@ -313,6 +313,12 @@ class AppPipeline:
             self.construir_visor()
             with ui.column().classes("flex-1 gap-4").style("min-width: 420px"):
                 self.construir_pasos()
+        # Aviso legal que la GPL-3 pide en las interfaces interactivas (sección 5.d)
+        ui.label("pipeline_hrtf © 2026 Jerónimo Cardona y Harold Cadavid. Software libre bajo la "
+                 "GPL-3.0 o posterior, SIN NINGUNA GARANTÍA. Incluye MeshLab, Mesh2HRTF, NumCalc y otros "
+                 "componentes con sus propias licencias: ver LICENSE.txt y AVISOS_DE_TERCEROS.md junto a "
+                 "la app. El código fuente va en codigo_fuente_pipeline_hrtf.zip."
+                 ).classes("text-xs tenue px-5 pb-5")
         ui.timer(0.25, self.seguir_camara)
         self.refrescar()
 

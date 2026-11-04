@@ -18,8 +18,12 @@ Resultado: dist\\pipeline_hrtf\\ (se reparte la carpeta entera; se abre pipeline
   pyfar, spharpy, matplotlib) van dentro.
 - La limpieza, el gradado, la exportación y la simulación corren en procesos aparte: el .exe
   se relanza a sí mismo con el subcomando "limpiar", "gradar", "exportar" o "simular" (ver app.py).
+- Al terminar, licencias/generar_avisos.py deja junto al .exe LICENSE.txt (GPL-3),
+  AVISOS_DE_TERCEROS.md, licencias/ y codigo_fuente_pipeline_hrtf.zip. Repartir la carpeta
+  entera, con esos archivos: la GPL-3 (por pymeshlab) exige entregar el código con el binario.
 """
 import os
+import sys
 from pathlib import Path
 
 import nicegui
@@ -69,3 +73,9 @@ exe = EXE(
     console=True,           # la consola muestra el estado del gradado al arrancar y los errores
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="pipeline_hrtf")
+
+# Licencias y código fuente junto al .exe (GPL-3 y avisos de terceros): ver licencias/generar_avisos.py
+sys.path.insert(0, os.path.join(SPECPATH, "licencias"))
+from generar_avisos import generar  # noqa: E402
+
+generar(Path(DISTPATH) / "pipeline_hrtf")

@@ -1,4 +1,4 @@
-# Cambios de Harold (persona B), 13 de octubre de 2026
+# Cambios de Harold Cadavid (coautor), 13 de octubre de 2026
 
 Hay dos ramas nuevas en el repo para revisar antes de unirlas a `main`. Son independientes y
 `main` no cambió.

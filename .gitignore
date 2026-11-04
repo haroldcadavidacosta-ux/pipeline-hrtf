@@ -23,3 +23,11 @@ datos/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Material de trabajo local (tesis, extracciones, copias de otras ramas): tiene datos y nombres
+# de participantes, no va al repositorio
+Proyecto de latex/
+_extraccion_tesis/
+_extraccion_tesis.rar
+pipeline-hrtf-escala-bitragial/
+..pipeline_hrtf_metricas/

@@ -41,7 +41,7 @@ SALIDA = SALIDAS / "evaluacion"
 CARPETA_SOFA = "SOFA_myHRTF_project_merged"
 FS = 44100.0
 N_FFT = 294                        # 44 100 / 150: líneas cada 150 Hz, como la simulación
-SUJETOS_PROPIOS = ["A1", "A3"]
+SUJETOS_PROPIOS = ["A1", "A3"]       # códigos; la carpeta sale de config.carpeta_captura
 # HUTUBS: pp1 y pp96 son el maniquí FABIAN; pp22 y pp88, la misma persona medida dos veces
 HUTUBS_NO_HUMANOS = {1, 96}
 HUTUBS_REPETIDO = (22, 88)
@@ -68,7 +68,7 @@ def _desde_sofa(ruta: Path, nombre: str) -> dict:
 
 
 def cargar_propio(sujeto: str) -> dict:
-    return _desde_sofa(SALIDAS / sujeto / CARPETA_SOFA / "HRIR_Default_44100.sofa", sujeto)
+    return _desde_sofa(SALIDAS / config.carpeta_captura(sujeto) / CARPETA_SOFA / "HRIR_Default_44100.sofa", sujeto)
 
 
 def cargar_hutubs(i: int, tipo: str = "simulated") -> dict:
@@ -192,7 +192,7 @@ def repetibilidad() -> dict:
     out, mapas = {}, {}
     hs = {}
     for s in SUJETOS_PROPIOS:
-        x = sf.read_sofa(str(SALIDAS / s / CARPETA_SOFA / "HRTF_Default_48000.sofa"), verify=False)
+        x = sf.read_sofa(str(SALIDAS / config.carpeta_captura(s) / CARPETA_SOFA / "HRTF_Default_48000.sofa"), verify=False)
         hs[s] = {"pos": np.asarray(x.SourcePosition, dtype=float), "f": np.asarray(x.N, dtype=float),
                  "db": espectral.magnitud_db(np.asarray(x.Data_Real) + 1j * np.asarray(x.Data_Imag))}
     a, c = hs["A1"], hs["A3"]

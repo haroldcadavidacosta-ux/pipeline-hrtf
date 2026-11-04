@@ -73,6 +73,25 @@ ILD_INTERPRETAR_DESDE_HZ = 1000.0 # por debajo, con Δf = 150 Hz, hay 0 o 1 lín
 UMBRAL_ITD_S = 16e-6              # umbral perceptual de referencia del marco (≈ 16 µs)
 UMBRAL_ILD_DB = 1.0               # ídem para la ILD por tercio de octava
 
+# --- Capturas -------------------------------------------------------------
+# En el repositorio las capturas se nombran solo con el código del participante (A1, A3, B,
+# C1…), nunca con su nombre. Si en una máquina las carpetas de datos/ se llaman de otra forma,
+# la correspondencia va en config_local.py (que no se sube); sin ella, la carpeta se llama
+# como el código.
+CARPETAS_CAPTURAS: dict[str, str] = {}     # código -> carpeta en datos/salidas
+PREFIJOS_BARRIDO: dict[str, str] = {}      # código -> prefijo de sus condiciones en datos/experimentos/barrido_e
+
+
+def carpeta_captura(codigo: str) -> str:
+    """Nombre de la carpeta de una captura en datos/salidas."""
+    return CARPETAS_CAPTURAS.get(codigo, codigo)
+
+
+def condicion_barrido(codigo: str, e: str) -> str:
+    """Nombre de una condición del barrido de -e para una captura (carpeta e_<condición>)."""
+    return f"{PREFIJOS_BARRIDO.get(codigo, codigo)}_{e}"
+
+
 # --- Sobreescritura local -------------------------------------------------
 try:
     from config_local import *    # noqa: F401,F403

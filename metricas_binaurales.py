@@ -1,6 +1,7 @@
 """ITD, ILD y sus errores entre dos HRTF del pipeline (nivel 3 de la evaluación).
 
-Lee de cada sujeto, en datos/salidas/<sujeto>/SOFA_myHRTF_project_merged/, la HRIR (para la
+Lee de cada captura (por su código; la carpeta sale de config.carpeta_captura), en
+datos/salidas/<carpeta>/SOFA_myHRTF_project_merged/, la HRIR (para la
 ITD) y la HRTF (para la ILD) SIN ecualizar, en la rejilla pedida, y calcula:
 
   ITD por dirección          metricas/itd.py  (correlación cruzada, paso bajo FC_ITD)
@@ -11,8 +12,8 @@ ITD) y la HRTF (para la ILD) SIN ecualizar, en la rejilla pedida, y calcula:
 Con un solo sujeto (--ref sin --sim) solo calcula sus ITD e ILD, para desarrollar y revisar.
 
 Uso:
-  .venv/Scripts/python.exe metricas_binaurales.py --ref "A1"
-  .venv/Scripts/python.exe metricas_binaurales.py --ref "A1" --sim "A3"
+  .venv/Scripts/python.exe metricas_binaurales.py --ref A1
+  .venv/Scripts/python.exe metricas_binaurales.py --ref A1 --sim A3
 Escribe en datos/salidas/metricas/<sim>_vs_<ref>_<rejilla>/ (o <ref>_<rejilla>/):
 resumen.json, itd.csv, ild_<ref|sim>.csv, e_ild.csv, informe.md y figuras/*.png.
 """
@@ -39,7 +40,7 @@ FS = 48000
 
 
 def cargar(sujeto: str, rejilla: str) -> dict:
-    base = SALIDAS / sujeto / CARPETA
+    base = SALIDAS / config.carpeta_captura(sujeto) / CARPETA
     s_ir = sf.read_sofa(str(base / f"HRIR_{rejilla}_{FS}.sofa"), verify=False)
     s_tf = sf.read_sofa(str(base / f"HRTF_{rejilla}_{FS}.sofa"), verify=False)
     pos = np.asarray(s_ir.SourcePosition, dtype=float)
@@ -146,8 +147,8 @@ def figura_eild(bs: list, e_ild: np.ndarray, carpeta: Path) -> str:
 
 def principal() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--ref", required=True, help="sujeto de referencia (carpeta en datos/salidas)")
-    ap.add_argument("--sim", help="sujeto evaluado; sin él solo se calculan las pistas de --ref")
+    ap.add_argument("--ref", required=True, help="captura de referencia (código, p. ej. A1)")
+    ap.add_argument("--sim", help="captura evaluada; sin ella solo se calculan las pistas de --ref")
     ap.add_argument("--rejilla", default="Default", choices=["Default", "ARI"])
     a = ap.parse_args()
 

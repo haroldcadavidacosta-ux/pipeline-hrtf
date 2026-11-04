@@ -3,7 +3,7 @@
 El mismo proceso que siguió B en el barrido, paso por paso:
 
   1. entrada: malla_final_mm.ply de la limpieza (aprobada y cortada a config.CORTE_CUELLO_MM) ->
-     A<X>_3Dmesh_orig.stl, como hace malla/gradado.preparar_entrada
+     <condición>_3Dmesh_orig.stl, como hace malla/gradado.preparar_entrada
   2. gradado: -x 0.5 -y 10 -e <e> -s left -v, con los reintentos de malla/gradado.gradar_lado si el
      binario de 2022 se cae
   3. geometría: caras, F = 2V - 4, aristas, Hausdorff en la pina contra su propia malla de entrada
@@ -12,11 +12,12 @@ El mismo proceso que siguió B en el barrido, paso por paso:
   5. NumCalc -estimate_ram y comprobación de que NC.inp tiene el mismo vector y los mismos parámetros
      que el barrido
 
-La condición se llama A<X>_<e> y vive en datos/experimentos/barrido_e/e_A<X>_<e>/, para que el
+La condición se llama config.condicion_barrido(<captura>, <e>) y vive en
+datos/experimentos/barrido_e/e_<condición>/, para que el
 conductor de la fase 2 la simule igual que las demás (tanda en fase2.py).
 
-Uso:  .venv/Scripts/python.exe experimentos/barrido_e/fase4_preparar.py <A|C> <e>
-Escribe e_A<X>_<e>/preparacion.json. No lanza ninguna simulación.
+Uso:  .venv/Scripts/python.exe experimentos/barrido_e/fase4_preparar.py <A1|A3> <e>
+Escribe e_<condición>/preparacion.json. No lanza ninguna simulación.
 """
 import json
 import shutil
@@ -70,19 +71,19 @@ def gradar(carpeta: Path, entrada: Path, malla: str, e: str) -> tuple[subprocess
 def principal() -> None:
     sin_ventanas_de_error()
     captura, e = sys.argv[1].upper(), sys.argv[2]
-    nombre = f"A{captura}_{e}"
+    nombre = config.condicion_barrido(captura, e)
     carpeta = BARRIDO / f"e_{nombre}"
     carpeta.mkdir(exist_ok=True)
     malla = f"3Dmesh_graded_left_e{nombre}.ply"
     r = {"condicion": nombre, "sujeto": "A", "captura": captura, "e": e}
 
     # 1. entrada
-    limpieza = SALIDAS / f"A {captura}"
+    limpieza = SALIDAS / config.carpeta_captura(captura)
     inf = json.loads((limpieza / "informe_limpieza.json").read_text(encoding="utf-8"))
     corte = inf.get("corte_cuello", {})
     if not inf["control_calidad"]["aprobado"] or not corte.get("aplicado") or corte.get("z_mm") != config.CORTE_CUELLO_MM:
-        sys.exit(f"A {captura}: la limpieza no está aprobada o no está cortada a {config.CORTE_CUELLO_MM} mm")
-    entrada = BARRIDO / f"A{captura}_3Dmesh_orig.stl"
+        sys.exit(f"{captura}: la limpieza no está aprobada o no está cortada a {config.CORTE_CUELLO_MM} mm")
+    entrada = BARRIDO / f"{config.condicion_barrido(captura, '3Dmesh_orig')}.stl"
     if not entrada.exists():
         m = trimesh.load(limpieza / "malla_final_mm.ply", process=False)
         if not m.is_watertight:
@@ -125,7 +126,7 @@ def principal() -> None:
         plantilla = json.loads((BARRIDO / "e_1" / "trabajo_exportacion.json").read_text(encoding="utf-8"))
         trabajo = {"programPath": plantilla["programPath"],
                    "parametros": plantilla["parametros"] | {
-                       "title": f"DIAGNOSTICO repetibilidad A {captura} -e {e} (NO es una HRTF valida)"},
+                       "title": f"DIAGNOSTICO repetibilidad {captura} -e {e} (NO es una HRTF valida)"},
                    "canales_mm": {"left": canal.tolist(), "right": (-canal).tolist()},
                    "lados": {"left": {"malla": (carpeta / malla).as_posix(), "proyecto": proyecto.as_posix()}}}
         ruta_trabajo = carpeta / "trabajo_exportacion.json"

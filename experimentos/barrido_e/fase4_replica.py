@@ -1,7 +1,7 @@
 """Fase 4, réplica del barrido en una segunda cabeza. Escrito ANTES de simular el par a -e 1
 (predicciones en fase4_sujeto_A_2026-10-05.md, sección «Par y réplica a -e 1»).
 
-Para cada captura de A (A y C) se compara su versión a -e 1 y a -e 2 contra su propia versión a -e 0,5,
+Para cada captura de A (A1 y A3) se compara su versión a -e 1 y a -e 2 contra su propia versión a -e 0,5,
 con el mismo código de la fase 3: SD media por bandas (rejilla Default, ponderada por área de Voronoi) y
 distribución del primer notch (corrimiento y fracción de muescas perdidas). Al lado, los mismos valores de
 B (fase3/metricas.json). La pregunta: ¿el costo de pasar de -e 0,5 a -e 1 o a -e 2 es el mismo en
@@ -48,14 +48,14 @@ def comparar(ref: dict, otra: dict) -> dict:
 
 
 def principal() -> None:
-    C = json.loads((F.BARRIDO / "fase3" / "metricas.json").read_text(encoding="utf-8"))["condiciones"]
+    barrido_b = json.loads((F.BARRIDO / "fase3" / "metricas.json").read_text(encoding="utf-8"))["condiciones"]
     r = {"generado": datetime.now().astimezone().isoformat(timespec="seconds"), "A": {}, "B": {}}
-    for captura in ("A", "C"):
+    for captura in ("A1", "A3"):
         ref = cargar(REF, captura)
         for e in COMPARADAS:
             r["A"][f"{captura}_{e}"] = comparar(ref, cargar(e, captura))
     for e in COMPARADAS:
-        s = C[e]
+        s = barrido_b[e]
         n = s["notch_distribucion"]["todas"]
         r["B"][e] = {"sd_4_11_db": s["sd_bandas_db"]["4-11"]["todas"], "sd_12_16_db": s["sd_bandas_db"]["12-16"]["todas"],
                             "fraccion_perdidas": n["fraccion_perdidas"], "mediana_hz": n["mediana_hz"],
@@ -69,17 +69,17 @@ def principal() -> None:
          "| comparación | SD 4–11 kHz (dB) | SD 12–16 kHz (dB) | muescas perdidas | corrimiento de la muesca, mediana [RIC] |",
          "|---|---|---|---|---|"]
     for e in COMPARADAS:
-        for captura in ("A", "C"):
+        for captura in ("A1", "A3"):
             x = r["A"][f"{captura}_{e}"]
             n = x["notch"]
-            L.append(f"| A {captura}: -e {e} frente a -e 0,5 | {num(x['sd_bandas_db']['4-11']['todas'])} | "
+            L.append(f"| {captura}: -e {e} frente a -e 0,5 | {num(x['sd_bandas_db']['4-11']['todas'])} | "
                      f"{num(x['sd_bandas_db']['12-16']['todas'])} | {num(100 * n['fraccion_perdidas'], 0)} % | "
                      f"{num(n['mediana_hz'], 0)} Hz [{num(n['q1_hz'], 0)}, {num(n['q3_hz'], 0)}] |")
         s = r["B"][e]
         L.append(f"| **B: -e {e} frente a -e 0,5** | {num(s['sd_4_11_db'])} | {num(s['sd_12_16_db'])} | "
                  f"{num(100 * s['fraccion_perdidas'], 0)} % | {num(s['mediana_hz'], 0)} Hz [{num(s['q1_hz'], 0)}, {num(s['q3_hz'], 0)}] |")
     L += ["", "A: frecuencias comunes hasta "
-          f"{num(r['A']['A_1']['hasta_hz'] / 1000, 1)} kHz (el par a -e 0,5 llega a 18,9 kHz). B: 75 frecuencias "
+          f"{num(r['A']['A1_1']['hasta_hz'] / 1000, 1)} kHz (el par a -e 0,5 llega a 18,9 kHz). B: 75 frecuencias "
           "hasta 23,1 kHz; sus bandas de 4–11 y 12–16 kHz y la búsqueda de muescas no dependen de ese tope."]
     (SALIDA / "informe_replica.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     print("\n".join(L))

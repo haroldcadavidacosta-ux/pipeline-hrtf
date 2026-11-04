@@ -32,6 +32,7 @@ import sofar as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fase3_analisis as F    # noqa: E402
+import config                 # noqa: E402
 
 BARRIDO = F.BARRIDO
 SALIDA = BARRIDO / "fase4"
@@ -39,7 +40,7 @@ BANDAS = {"4-11": (4000.0, 11000.0), "12-16": (12000.0, 16000.0), "0.9-4": (900.
 
 
 def cargar(e: str, captura: str) -> dict:
-    clave = f"A{captura}_{e}"
+    clave = config.condicion_barrido(captura, e)
     carpeta = BARRIDO / f"fase4_e{e}"
     s = sf.read_sofa(str(carpeta / f"e_{clave}" / "Output2HRTF" / "HRTF_Default.sofa"), verify=False)
     H = (np.asarray(s.Data_Real) + 1j * np.asarray(s.Data_Imag))[:, 0, :]
@@ -78,7 +79,7 @@ def elegir(cand: dict, umbral_sd: float, umbral_muescas: float) -> dict:
 def principal() -> None:
     e = sys.argv[1]
     SALIDA.mkdir(parents=True, exist_ok=True)
-    a, c = cargar(e, "A"), cargar(e, "C")
+    a, c = cargar(e, "A1"), cargar(e, "A3")
     if not np.allclose(a["pos"], c["pos"]) or not np.array_equal(a["f"], c["f"]):
         sys.exit("las dos capturas no tienen la misma rejilla o el mismo vector de frecuencias")
     cand, excl_barrido = candidatas()
@@ -95,7 +96,7 @@ def principal() -> None:
     piso_sd, piso_muescas = bandas["4-11"]["todas"], notch["fraccion_perdidas"]
     eleccion = elegir(cand, piso_sd, piso_muescas)
     r = {"generado": datetime.now().astimezone().isoformat(timespec="seconds"), "e": e,
-         "referencia": "A1", "comparada": "A3", "estado": {"A": a["estado"], "C": c["estado"]},
+         "referencia": "A1", "comparada": "A3", "estado": {"A1": a["estado"], "A3": c["estado"]},
          "frecuencias_excluidas_hz": excl, "frecuencias_comunes": int(k.sum()),
          "piso_sd_4_11_db": piso_sd, "piso_muescas_perdidas": piso_muescas,
          "sd_bandas_db": bandas, "notch": {x: notch[x] for x in notch if x != "corrimientos_hz"},

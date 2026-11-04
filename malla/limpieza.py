@@ -79,7 +79,7 @@ PASO_BARRIDO = 0.005            # AID: precisión con que se ubica la caja del t
 
 
 # --- Utilidades ---------------------------------------------------------------
-# PyMeshLab no puede escribir (y a veces leer) rutas con tildes en Windows ("Prueba á"),
+# PyMeshLab no puede escribir (y a veces leer) rutas con tildes en Windows (p. ej. "Begoña"),
 # así que la E/S pasa por un archivo temporal con nombre ASCII.
 def cargar(ms: pymeshlab.MeshSet, ruta: Path):
     ruta = Path(ruta)

@@ -58,7 +58,7 @@ están juntas en una sola app, `app.py`:
 
 | Sujeto | Resultado |
 |---|---|
-| C, B, D, E1 | aprobados |
+| C1, B, D, E1 | aprobados |
 | C2 | rechazado: tiene una cavidad grande en la nuca y tela doblada; hay que repetir el escaneo |
 | A1, A3 | aprobados y cortados a −115 mm; el corte incluye un trozo del hombro izquierdo |
 | A2 | rechazado: la espalda sigue unida al cuello y la malla no llega al corte de −115 mm |
