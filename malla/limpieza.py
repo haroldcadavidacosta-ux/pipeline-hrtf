@@ -17,8 +17,8 @@ Pasos:
      las orejas -> 3_suavizada.ply (--suavizar 0 desactiva los dos).
   7. Control de calidad: topología + proporciones del cráneo (+ escala, si la hay). Si
      falla -> pedir nuevo escaneo. Avisa (sin bloquear) si una concha salió poco profunda.
-  8. Escala real (opcional): con el AID o la circunferencia medidos en la persona se
-     escala a milímetros -> malla_final_mm.ply.
+  8. Escala real (opcional): con el ancho bitragial (pie de rey), el largo de las orejas
+     o la circunferencia medidos en la persona se escala a milímetros -> malla_final_mm.ply.
 
 Todas las distancias se expresan como fracción del AID (distancia interaural),
 así no dependen de la escala arbitraria del escaneo.
@@ -37,6 +37,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import Delaunay, cKDTree
 
 import config
+from malla.oreja import bitrago as bitrago_modelo
 from malla.oreja import largos as largos_oreja
 from malla.oreja import metricas as metricas_oreja
 
@@ -662,7 +663,7 @@ def control_calidad(informe):
               if o["profundidad_concha_AID"] < PROFUNDIDAD_CONCHA_MIN]
     if not (esc and esc["factor"]):
         avisos.append("sin escala real: la malla sigue en las unidades arbitrarias de KIRI "
-                      "(dar el largo de las orejas y/o la circunferencia)")
+                      "(dar el ancho bitragial, el largo de las orejas y/o la circunferencia)")
     # Sin el corte estándar la malla no es comparable con las demás (el cuello termina donde
     # terminó el escaneo), así que se rechaza. A2: la espalda quedó unida al cuello hasta
     # −105 mm y la malla terminaba en −102.
@@ -677,15 +678,20 @@ def control_calidad(informe):
     return {"aprobado": not fallas, "fallas": fallas, "avisos": avisos}
 
 
-def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None, orejas_mm=(None, None)):
+def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None, orejas_mm=(None, None),
+            bitrago_mm=None):
     """Factor de escala a milímetros a partir de medidas reales de la persona.
 
     Con el AID el factor es directo (los landmarks ya lo miden en la malla). Con la
     circunferencia se compara contra el perímetro horizontal máximo sobre las orejas.
     Con el largo de una oreja (hélix -> lóbulo, medido con regla) se compara contra la
     distancia entre esos dos puntos marcados en la malla (informe["largo_oreja_modelo"]).
+    Con el ancho bitragial (pie de rey, tragion a tragion) se compara contra la distancia
+    entre los dos tragos marcados (informe["bitrago_modelo"]).
 
-    Si se da el AID, manda el AID y la circunferencia sirve de control. Si no, se usa la
+    Si se da el AID, manda el AID y la circunferencia sirve de control. Si no y se da el
+    bitragial, manda el bitragial (es la medida de instrumento) y las caseras quedan de
+    control: su discrepancia frente a él es el error del método casero. Si no, se usa la
     mediana de los factores de circunferencia y orejas (provisional: falta validar cuál
     es más fiable, ver LIMPIEZA.md); con tres medidas, una mala no arrastra el resultado.
     """
@@ -712,13 +718,23 @@ def escalar(salida: Path, informe, aid_mm=None, circunferencia_mm=None, orejas_m
             factores[f"oreja_{lado}"] = mm / largos[lado]
     f_otros = float(np.median(list(factores.values()))) if factores else None
 
-    factor = f_aid or f_otros
+    bitrago = informe.get("bitrago_modelo")
+    f_bit = None
+    if bitrago_mm:
+        if not bitrago:
+            raise ValueError("se dio el ancho bitragial pero en el JSON de landmarks faltan los "
+                             "dos tragos: marcarlos en app.py")
+        f_bit = bitrago_mm / bitrago
+
+    factor = f_aid or f_bit or f_otros
     if factor:
-        fuente = "aid" if f_aid else ("+".join(factores) if len(factores) == 1 else
-                                      "mediana(" + ", ".join(factores) + ")")
+        fuente = ("aid" if f_aid else "bitrago" if f_bit else
+                  "+".join(factores) if len(factores) == 1 else "mediana(" + ", ".join(factores) + ")")
         esc |= {"factor": factor, "fuente": fuente,
                 "aid_mm": round(aid * factor, 2), "circunferencia_mm": round(perimetro * factor, 1)}
-        todos = ({"aid": f_aid} if f_aid else {}) | factores
+        if bitrago:
+            esc["bitrago_mm"] = round(bitrago * factor, 1)
+        todos = ({"aid": f_aid} if f_aid else {}) | ({"bitrago": f_bit} if f_bit else {}) | factores
         if len(todos) > 1:
             esc["factores"] = {k: round(v, 6) for k, v in todos.items()}
             # la de la circunferencia contra el AID ya está en "discrepancia" (se juzga aparte)
@@ -918,11 +934,13 @@ def cortar_cuello(ruta: Path, z_mm: float):
 
 def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: float = SIGMA_CASCO,
                  aid_mm: float | None = None, circunferencia_mm: float | None = None,
-                 orejas_mm: tuple[float | None, float | None] = (None, None)):
+                 orejas_mm: tuple[float | None, float | None] = (None, None),
+                 bitrago_mm: float | None = None):
     """Repite la limpieza con tolerancias cada vez más estrictas hasta obtener genus 0,
     escala a mm si hay medidas, y aplica el control de calidad (queda en informe_limpieza.json).
 
     orejas_mm: largo (hélix -> lóbulo) de la oreja izquierda y derecha medido en la persona.
+    bitrago_mm: ancho bitragial (tragion a tragion) medido con pie de rey en la persona.
     """
     for tol in TOLERANCIAS:
         informe = limpiar(ruta_malla, ruta_json, salida, tol, sigma_casco)
@@ -932,10 +950,15 @@ def limpiar_auto(ruta_malla: Path, ruta_json: Path, salida: Path, sigma_casco: f
             break
     # largo de las orejas en la malla (solo si el JSON trae hélix y lóbulo; los JSON de
     # 3 puntos no los tienen y el informe queda como antes)
-    largos = largos_oreja(json.loads(ruta_json.read_text(encoding="utf-8"))["puntos"])
+    puntos = json.loads(ruta_json.read_text(encoding="utf-8"))["puntos"]
+    largos = largos_oreja(puntos)
     if largos:
         informe["largo_oreja_modelo"] = {lado: round(d, 6) for lado, d in largos.items()}
-    informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm, orejas_mm)
+    # ancho bitragial en la malla (solo si se marcaron los dos tragos, que son opcionales)
+    bitrago = bitrago_modelo(puntos)
+    if bitrago:
+        informe["bitrago_modelo"] = round(bitrago, 6)
+    informe["escala"] = escalar(salida, informe, aid_mm, circunferencia_mm, orejas_mm, bitrago_mm)
     # el corte del cuello va en mm (config.CORTE_CUELLO_MM), así que solo hay corte si hay escala
     if informe["escala"]["factor"]:
         informe["corte_cuello"] = cortar_cuello(salida / "malla_final_mm.ply", config.CORTE_CUELLO_MM)
