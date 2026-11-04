@@ -17,7 +17,7 @@ Finalmente, la última fase evalúa el prototipo con cuatro preguntas: si funcio
 \subsection{Evaluación del prototipo}
 \label{subsec:evaluacion}
 
-La evaluación del prototipo se realizó a partir de los registros que genera el propio sistema, de las HRTF de producción de A~A y A~C y de la base de datos pública HUTUBS~\cite{Brinkmann2019}. Se organiza en cuatro preguntas de exigencia creciente: si el sistema funciona de principio a fin, si la HRTF que entrega se comporta como una HRTF humana, si dos capturas de la misma persona dan la misma HRTF y si la HRTF conserva los rasgos propios de la persona. Las dos últimas aplican a las HRTF de producción los niveles espectral y binaural de la evaluación del marco teórico (Sección~\ref{sec:marco_teorico}); el nivel geométrico se cubre con los requisitos que el control de calidad verifica en cada malla. Como en el barrido, los métodos, los parámetros y los criterios de aceptación se registraron con fecha en el sistema de control de versiones antes de calcular cualquier comparación.
+La evaluación del prototipo se realizó a partir de los registros que genera el propio sistema, de las HRTF de producción de A~A y A~C y de la base de datos pública HUTUBS~\cite{Brinkmann2019}. Se organiza en cuatro preguntas de exigencia creciente: si el sistema funciona de principio a fin, si la HRTF que entrega se comporta como una HRTF humana, si dos capturas de la misma persona dan la misma HRTF y si la HRTF conserva los rasgos propios de la persona. Las dos últimas aplican a las HRTF de producción los niveles espectral y binaural de la evaluación del marco teórico (Sección~\ref{sec:marco_teorico}); el nivel geométrico se cubre con los requisitos que el control de calidad verifica en cada malla. La verificación de la escala con calibrador descrita en el marco teórico no se aplica, porque las capturas de este trabajo se escalaron solo con las medidas domésticas. Como en el barrido, los métodos, los parámetros y los criterios de aceptación se registraron con fecha en el sistema de control de versiones antes de calcular cualquier comparación.
 
 \subsubsection{Datos de referencia}
 
@@ -29,7 +29,7 @@ Todas las comparaciones se hacen sobre la HRTF sin ecualizar, nunca sobre la DTF
 
 \subsubsection{Verificación funcional}
 
-La primera pregunta es si el prototipo hace lo que promete: llevar la captura del celular hasta un archivo SOFA válido sin intervención experta. Se verifica con los registros que el propio sistema genera en cada etapa: el resultado del control de calidad de cada captura y el motivo de cada rechazo, la convergencia de todas las frecuencias, la conformidad de cada archivo SOFA con su convención, comprobada con el verificador de la biblioteca sofar, la trazabilidad de cada archivo y la equivalencia de las herramientas reimplementadas con las originales (Sección~\ref{subsubsec:res_equivalencia}).
+La primera pregunta es si el prototipo hace lo que promete: llevar la captura del celular hasta un archivo SOFA válido sin intervención experta. Se verifica con los registros que el propio sistema genera en cada etapa: el resultado del control de calidad de cada captura y el motivo de cada rechazo, la convergencia de todas las frecuencias, la conformidad de cada archivo SOFA con su convención, comprobada con el verificador de la biblioteca sofar, la trazabilidad de cada archivo y la equivalencia de las herramientas reimplementadas con las originales.
 
 \subsubsection{Validez física}
 
@@ -37,7 +37,7 @@ La segunda pregunta es si la HRTF producida se comporta como una HRTF humana. Pa
 
 \subsubsection{Repetibilidad}
 
-La tercera pregunta es si dos capturas de la misma persona producen la misma HRTF. Se comparan las HRTF de producción de A~A y A~C, con A~A como referencia, en las dos orejas y en la rejilla Default. En el nivel espectral se reporta la SD por dirección y su mapa, y en el binaural, los errores de ITD e ILD de la Ecuación~\eqref{eq:error-itd-ild}, con su error absoluto medio, su máximo y la fracción de direcciones que superan los umbrales de 16~$\mu$s y 1~dB. Antes de calcularlo se registró una predicción para la ITD: como la AID escalada de A~C es 2,3~mm mayor que la de A~A, su ITD lateral debía superar a la de A~A entre 0 y 20~$\mu$s, según la sensibilidad de la Ecuación de Kuhn (Sección~\ref{subsubsec:aid}). Esta comparación mide la precisión del proceso de captura, no su exactitud.
+La tercera pregunta es si dos capturas de la misma persona producen la misma HRTF. Se comparan las HRTF de producción de A~A y A~C, con A~A como referencia, en las dos orejas y en la rejilla Default. En el nivel espectral se reporta la SD por dirección y su mapa, y en el binaural, los errores de ITD e ILD de la Ecuación~\eqref{eq:error-itd-ild}, con su error absoluto medio, su máximo y la fracción de direcciones que superan los umbrales de 16~$\mu$s y 1~dB. Antes de calcularlo se registró una predicción para la ITD: como la AID escalada de A~C es cerca de un 1,7~\% mayor que la de A~A y la ITD crece en la misma proporción que la escala de la malla (Sección~\ref{subsubsec:aid}), su ITD lateral debía superar a la de A~A entre 0 y 20~$\mu$s. Esta comparación mide la precisión del proceso de captura, no su exactitud.
 
 \subsubsection{Personalización}
 
@@ -112,7 +112,7 @@ Nivel entre 150 y 450~Hz (dB) & 0,02 a 0,17 & 0,16 & 0,16 \\
 \end{tabular}
 \end{table}
 
-Las dos HRTF se comportan como HRTF humanas: la ITD es de unos 780 a 800~$\mu$s con la fuente a un lado y de signo opuesto al otro, la ILD crece con la frecuencia, de unos 7~dB a 1~kHz a unos 30~dB a 16~kHz, como describe la teoría dúplex (Sección~\ref{subsubsec:duplex}), y el nivel a baja frecuencia queda a menos de 0,2~dB de 0~dB. A~A cumple el criterio en todos los rasgos. A~C lo incumple por poco en tres, la ITD a 270° (803 frente a un máximo de 797~$\mu$s) y la ILD a 1 y a 16~kHz, todos por encima del rango. Los tres son coherentes con su AID 2,3~mm mayor que la de A~A, es decir, con un error de escala entre capturas, y no con una HRTF de forma anómala.
+Las dos HRTF se comportan como HRTF humanas: la ITD es de unos 780 a 800~$\mu$s con la fuente a un lado y de signo opuesto al otro, la ILD crece con la frecuencia, de unos 7~dB a 1~kHz a unos 30~dB a 16~kHz, como describe la teoría dúplex (Sección~\ref{subsubsec:duplex}), y el nivel a baja frecuencia queda a menos de 0,2~dB de 0~dB. A~A cumple el criterio en todos los rasgos. A~C lo incumple por poco en tres, la ITD a 270° (803 frente a un máximo de 797~$\mu$s) y la ILD a 1 y a 16~kHz, todos por encima del rango. Los tres son coherentes con su AID 2,4~mm mayor que la de A~A, es decir, con un error de escala entre capturas, y no con una HRTF de forma anómala.
 
 \subsubsection{Repetibilidad}
 \label{subsubsec:res_repetibilidad_eval}

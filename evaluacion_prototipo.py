@@ -228,7 +228,8 @@ def figura_personalizacion(res: dict) -> None:
     rot = {"sd_4-11": "SD 4–11 kHz (dB)", "sd_12-16": "SD 12–16 kHz (dB)",
            "itd_mae_us": r"$|e_{\mathrm{ITD}}|$ medio ($\mu$s)",
            "ild_mae_db": r"$|e_{\mathrm{ILD}}|$ medio, desde 1 kHz (dB)"}
-    fig, ejes = plt.subplots(1, 4, figsize=(13, 3.4))
+    fig, ejes = plt.subplots(2, 2, figsize=(7.5, 5.6))
+    ejes = ejes.ravel()
     for ax, letra, m in zip(ejes, "abcd", METRICAS_F4):
         v = np.array(res["_inter_valores"][m])
         ax.hist(v, bins=40, color="#9ec5f4", label="Entre personas (pares de HUTUBS)")
@@ -237,10 +238,10 @@ def figura_personalizacion(res: dict) -> None:
         ax.axvline(res["intra"][m], color="#eb6834", lw=2.2, label="Misma persona (A1–A3)")
         ax.set_xlabel(rot[m])
         ax.set_title(f"({letra})", loc="left")
-    ejes[0].set_ylabel("Número de pares")
-    fig.legend(*ejes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False,
-               bbox_to_anchor=(0.5, -0.04))
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    for ax in ejes[::2]:
+        ax.set_ylabel("Número de pares")
+    fig.legend(*ejes[0].get_legend_handles_labels(), loc="lower center", ncol=2, frameon=False)
+    fig.tight_layout(rect=(0, 0.09, 1, 1))
     fig.savefig(SALIDA / "figuras" / "eval_personalizacion.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
