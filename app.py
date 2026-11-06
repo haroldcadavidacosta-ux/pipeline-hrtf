@@ -1184,7 +1184,11 @@ def principal() -> None:
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     if len(sys.argv) > 1 and sys.argv[1] in TAREAS:
-        # la app empaquetada se relanza a sí misma para cada tarea (ver comando_tarea)
+        # la app empaquetada se relanza a sí misma para cada tarea (ver comando_tarea). Empaquetada,
+        # Python ignora PYTHONUNBUFFERED y PYTHONIOENCODING: sin esto, el registro no recibe nada
+        # hasta que la tarea termina y las tildes llegan mal
+        for flujo in (sys.stdout, sys.stderr):
+            flujo.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
         import exportar_malla
         import gradar_malla
         import limpiar_malla
